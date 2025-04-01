@@ -1,5 +1,12 @@
 directories:
   output: dist
   buildResources: build
-files: []
+appId: com.pausenrechner.app
+productName: Pausenrechner
+publish:
+  provider: generic
+  url: https://drive.google.com/uc?export=download&id=1FSpkfy47qJCPm-top4jaiIy2CaRtjEfq
+files:
+  - filter:
+      - '**/*'
 electronVersion: 29.4.6

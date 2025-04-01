@@ -22,10 +22,15 @@
     "appId": "com.pausenrechner.app",
     "productName": "Pausenrechner",
     "publish": {
+<<<<<<< HEAD
       "provider": "github",
       "owner": "Mev9999",  
       "repo": "Pausenrechner",   
       "releaseType": "release"
+=======
+      "provider": "generic",
+      "url": "https://drive.google.com/uc?export=download&id=1FSpkfy47qJCPm-top4jaiIy2CaRtjEfq"
+>>>>>>> fc27ef0 (Initial commit)
     },
     "files": [
       "**/*"
