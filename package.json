@@ -1,6 +1,10 @@
 {
   "name": "pausenrechner",
+<<<<<<< HEAD
   "version": "1.0.2",
+=======
+  "version": "1.0.0",
+>>>>>>> 9c67438 (Initial commit)
   "description": "Pausenrechner App",
   "main": "main.js",
   "scripts": {
@@ -9,13 +13,17 @@
   },
   "dependencies": {
     "dayjs": "^1.11.9",
+<<<<<<< HEAD
     "electron-log": "^5.3.3",
     "electron-updater": "^6.6.2",
+=======
+>>>>>>> 9c67438 (Initial commit)
     "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "electron": "^29.4.6",
     "electron-builder": "^26.0.12"
+<<<<<<< HEAD
   },
   "author": "Mev",
   "build": {
@@ -30,5 +38,7 @@
     "files": [
       "**/*"
     ]
+=======
+>>>>>>> 9c67438 (Initial commit)
   }
 }
