@@ -1,4 +1,3 @@
-<<<<<<< HEAD
 const { app, BrowserWindow } = require('electron');  // Importiert nur die benötigten Module
 const path = require('path');
 const log = require('electron-log');
@@ -13,11 +12,6 @@ log.info('App starting...');
 function checkForUpdates() {
   autoUpdater.checkForUpdatesAndNotify();  // Überprüft und benachrichtigt bei Updates
 }
-=======
-
-const { app, BrowserWindow } = require('electron');
-const path = require('path');
->>>>>>> 9c67438 (Initial commit)
 
 function createWindow() {
   const win = new BrowserWindow({
@@ -31,7 +25,6 @@ function createWindow() {
     title: 'Pausenrechner'
   });
 
-<<<<<<< HEAD
   win.loadFile('index.html');  // Lädt die HTML-Datei für das Fenster
 
   // Auto-Update prüfen, wenn das Fenster geladen ist
@@ -73,18 +66,4 @@ app.whenReady().then(() => {
 
 app.on('window-all-closed', function () {
   if (process.platform !== 'darwin') app.quit();  // Beendet die App, wenn alle Fenster geschlossen sind (außer auf macOS)
-=======
-  win.loadFile('index.html');
-}
-
-app.whenReady().then(() => {
-  createWindow();
-  app.on('activate', function () {
-    if (BrowserWindow.getAllWindows().length === 0) createWindow();
-  });
-});
-
-app.on('window-all-closed', function () {
-  if (process.platform !== 'darwin') app.quit();
->>>>>>> 9c67438 (Initial commit)
 });
