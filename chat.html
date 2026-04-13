@@ -1,0 +1,139 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8" />
+  <title>Chat</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body {
+      font-family: "Segoe UI", sans-serif;
+      display: flex;
+      flex-direction: column;
+      height: 100vh;
+      background: #f2f2f2;
+    }
+    #header {
+      background: #d7261e;
+      color: white;
+      padding: 12px 16px;
+      font-size: 18px;
+      text-align: center;
+    }
+    #log {
+      flex: 1;
+      padding: 16px;
+      overflow-y: auto;
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      background: #e5ded8;
+    }
+    .message {
+      max-width: 70%;
+      padding: 10px 14px;
+      border-radius: 18px;
+      word-wrap: break-word;
+    }
+    .from-peer {
+      align-self: flex-start;
+      background: #fff;
+      border-top-left-radius: 2px;
+    }
+    .from-me {
+      align-self: flex-end;
+      background: #d7261e;
+      color: #fff;
+      border-top-right-radius: 2px;
+    }
+    #input-container {
+      display: flex;
+      padding: 12px;
+      background: #fff;
+      border-top: 1px solid #ccc;
+    }
+    #input {
+      flex: 1;
+      padding: 10px 14px;
+      border: 1px solid #ccc;
+      border-radius: 20px;
+      font-size: 14px;
+      outline: none;
+    }
+    #send {
+      margin-left: 8px;
+      padding: 0 16px;
+      background: #d7261e;
+      color: white;
+      border: none;
+      border-radius: 20px;
+      cursor: pointer;
+    }
+    #send:hover { background: #b81f17; }
+  </style>
+</head>
+<body>
+  <div id="header">Chat mit <span id="peer-name"></span></div>
+  <div id="log"></div>
+  <div id="input-container">
+    <input id="input" placeholder="Nachricht eingeben…" autocomplete="off" />
+    <button id="send">Senden</button>
+  </div>
+
+  <script>
+    // URL-Parameter auslesen
+    const params   = new URLSearchParams(window.location.search);
+    const myId     = params.get('myId');
+    const peerId   = params.get('peerId');
+    document.getElementById('peer-name').textContent = peerId;
+
+    // Hier Deine Admin-/Server-IP
+    const ADMIN_ADDR = '192.168.210.15';
+    const serverUrl  = myId === 'Admin'
+      ? 'http://localhost:3000'
+      : `http://192.168.210.15:3000`;
+
+    // Socket.IO laden und verbinden
+    var socket = window.socket = require('socket.io-client')(serverUrl);
+    socket.on('connect', () => {
+  console.log('🔗 Socket verbunden:', socket.id, 'connected=', socket.connected);
+  socket.emit('register', myId);
+  console.log('➡️ Register-Event gesendet für', myId);
+});
+socket.on('connect_error', err => {
+  console.error('❌ Connect Error:', err);
+});
+socket.on('disconnect', reason => {
+  console.warn('⚠️ Socket getrennt:', reason);
+});
+
+    socket.on('chat-message', ({ from, text }) => {
+      const msg = document.createElement('div');
+      msg.classList.add('message', from === myId ? 'from-me' : 'from-peer');
+      msg.textContent = text;
+      const log = document.getElementById('log');
+      log.appendChild(msg);
+      log.scrollTop = log.scrollHeight;
+    });
+
+    function sendMessage() {
+      const input = document.getElementById('input');
+      const text  = input.value.trim();
+      if (!text) return;
+      socket.emit('chat-message', { from: myId, to: peerId, text });
+      const me = document.createElement('div');
+      me.classList.add('message', 'from-me');
+      me.textContent = text;
+      const log = document.getElementById('log');
+      log.appendChild(me);
+      log.scrollTop = log.scrollHeight;
+      input.value = '';
+      input.focus();
+    }
+
+    document.getElementById('send').addEventListener('click', sendMessage);
+    document.getElementById('input').addEventListener('keydown', e => {
+      if (e.key === 'Enter') sendMessage();
+    });
+  </script>
+</body>
+</html>

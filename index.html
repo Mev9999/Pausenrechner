@@ -4,23 +4,33 @@
 <head>
   <meta charset="UTF-8">
   <title>Pausenrechner</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chartjs-plugin-datalabels"></script>
+  <script>
+    Chart.register(ChartDataLabels);
+  </script>
   <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      background-color: #ffffff;
+      padding: 30px;
+      color: #111;
+    }
+  
     .layout {
       display: flex;
       gap: 40px;
       align-items: flex-start;
+      flex-wrap: wrap;
+      max-width: 1400px;
+      margin: 0 auto;
     }
-
-    .info-warning {
-      color: #d98200;
-      font-weight: bold;
-    }
-
+  
     .form-section {
       flex: 1;
       max-width: 300px;
     }
-
+  
     .result-section {
       flex: 2;
       background-color: #f7f7f7;
@@ -30,52 +40,13 @@
       border-radius: 6px;
       min-height: 300px;
     }
-
-    body {
-      font-family: "Segoe UI", sans-serif;
-      background-color: #ffffff;
-      padding: 30px;
-      color: #111;
+  
+    .chart-section {
+      flex: 1;
+      min-width: 400px;
+      padding-left: 40px;
     }
-
-    img.logo {
-      height: 60px;
-      margin-bottom: 20px;
-    }
-
-    h1 {
-      color: #d7261e;
-    }
-
-    label {
-      font-weight: bold;
-      display: inline-block;
-      margin-top: 10px;
-    }
-
-    select, input[type="date"], input[type="time"], button {
-      margin-top: 5px;
-      padding: 8px 12px;
-      border: 1px solid #ccc;
-      border-radius: 6px;
-      font-size: 16px;
-      width: 250px;
-      box-sizing: border-box;
-    }
-
-    button {
-      background-color: #d7261e;
-      color: white;
-      font-weight: bold;
-      cursor: pointer;
-      margin-top: 20px;
-      width: 260px;
-    }
-
-    button:hover {
-      background-color: #b81f17;
-    }
-
+  
     #ergebnis {
       background-color: #f7f7f7;
       border: 1px solid #ccc;
@@ -85,66 +56,222 @@
       border-radius: 6px;
       max-width: 700px;
     }
-
-    .form-group {
-      margin-bottom: 15px;
+  
+    #open-archive-button {
+      width: 260px;
+      margin-top: 10px;
+      background-color: #6c757d;
     }
 
+    img.logo {
+      height: 60px;
+      margin-bottom: 20px;
+    }
+  
+    h1 {
+      color: #d7261e;
+    }
+  
+    label {
+      font-weight: bold;
+      display: inline-block;
+      margin-top: 10px;
+    }
+  
+    select,
+    input[type="date"],
+    input[type="time"],
+    button {
+      margin-top: 5px;
+      padding: 8px 12px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      font-size: 16px;
+      width: 250px;
+      box-sizing: border-box;
+    }
+  
+    button {
+      background-color: #d7261e;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+      margin-top: 10px;
+      width: 260px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 8px;
+      border: none;
+      border-radius: 6px;
+      padding: 10px;
+      transition: background-color 0.3s ease;
+    }
+  
+    button:hover {
+      background-color: #b81f17;
+    }
+  
+    #admin-button {
+      margin-top: 40px;
+      background-color: #6c757d;
+    }
+  
+    #admin-button:hover {
+      background-color: #5a6268;
+    }
+  
     .info-green {
       color: green;
       font-weight: bold;
     }
-
+  
     .info-red {
       color: red;
       font-weight: bold;
     }
+  
+    .info-blue {
+      color: blue;
+      font-weight: bold;
+    }
+  
+    .info-warning {
+      color: #d98200;
+      font-weight: bold;
+    }
+  
+    @keyframes pulse {
+      0% {
+        transform: scale(1);
+        background-color: #ff4d4d;
+      }
+      50% {
+        transform: scale(1.1);
+        background-color: #ff1a1a;
+      }
+      100% {
+        transform: scale(1);
+        background-color: #ff4d4d;
+      }
+    }
+  
+    /* --- Aktionen Styling --- */
+    #aktionen-block {
+      font-size: 14px;
+      margin-top: 20px;
+      padding: 15px 20px;
+      background-color: #f7f7f7;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      max-width: 700px;
+    }
+  
+    #aktionen-flex {
+      display: flex;
+      gap: 20px;
+    }
+  
+    #aktionen-block h3 {
+      margin: 0 0 6px 0;
+      font-size: 16px;
+    }
+  
+    .aktionen-spalte {
+      flex: 1;
+    }
+  
+    .zeile {
+      font-size: 14px;
+      margin: 0;
+      padding: 0;
+      line-height: 1;
+    }
+  
+    #aktionen-block span {
+      white-space: nowrap;
+    }
+  
+    #welcome-calls-inhalt {
+      font-size: 14px;
+      line-height: 1.1;
+    }
   </style>
-</head>
-<body>
-  <img src="logo-hsp-serviceline-1024x289.png" class="logo" alt="Logo">
-  <h1>Pausenrechner</h1>
-
-  <div class="layout">
-    <div class="form-section">
-      <div class="form-group">
-        <label for="agent">Agent wählen:</label><br>
+  
+  <body>
+    <img src="logo-hsp-serviceline-1024x289.png" class="logo" alt="Logo" />
+    <h1>Pausenrechner</h1>
+    <div id="app-version" style="font-size: 14px; color: gray; margin-bottom: 10px;">
+      Version: wird geladen...
+    </div>
+  
+    <div class="layout">
+      <!-- Formular -->
+      <div class="form-section">
+        <label for="agent">Agent wählen:</label>
         <select id="agent"></select>
+  
+        <label for="start">Pause berechnen von:</label>
+        <input type="date" id="start" />
+  
+        <label for="end">Pause berechnen bis:</label>
+        <input type="date" id="end" />
+  
+        <label for="arbeitsbeginn">Dienstbeginn:</label>
+        <input type="time" id="arbeitsbeginn" />
+  
+        <label for="arbeitsende">Dienstende:</label>
+        <input type="time" id="arbeitsende" />
+  
+        <button id="berechnen">🔍 Pausen berechnen</button>
+        <button id="pause-button" style="background-color: #4CAF50;">⏯️ Pause starten</button>
+        <button id="admin-button">🛠️ Adminbereich</button>
+      
+      <button id="open-archive-button" style="margin-top:20px; background:#6c757d;">
+          📂 Nachrichten-Archiv
+        </button>
       </div>
-
-      <div class="form-group">
-        <label for="start">Startdatum:</label><br>
-        <input type="date" id="start">
+      
+      <!-- Ergebnis & Aktionen -->
+      <div style="flex: 2; display: flex; flex-direction: column;">
+        <div id="ergebnis" class="result-section">
+          Wähle einen Agenten und ein Datum, um loszulegen.
+        </div>
+  
+        <!-- Aktionen -->
+        <div id="aktionen-block">
+          <div id="aktionen-flex">
+            <div class="aktionen-spalte" id="telefonaktionen-inhalt" style="border-right: 1px solid #ccc; padding-right: 15px;">
+              <h3>📞 Telefonaktionen</h3>
+              <div>Wähle einen Agenten und ein Datum, um loszulegen.</div>
+            </div>
+            
+            <div class="aktionen-spalte" style="padding-left: 15px;">
+              <h3>📬 Welcome Calls</h3>
+              <div id="welcome-calls-inhalt">Wähle einen Agenten und ein Datum, um loszulegen.</div>
+            </div>
+          </div>
+        </div>
+  
+        <!-- Update Fortschritt -->
+        <div id="update-progress-container" style="margin-top: 10px; width: 100%; background: #eee; border-radius: 6px; overflow: hidden; display: none;">
+          <div id="update-progress-bar" style="height: 10px; width: 0; background: #d7261e;"></div>
+        </div>
       </div>
-
-      <div class="form-group">
-        <label for="end">Enddatum:</label><br>
-        <input type="date" id="end">
-      </div>
-
-      <div class="form-group">
-        <label for="arbeitsbeginn">Dienstbeginn:</label><br>
-        <input type="time" id="arbeitsbeginn">
-      </div>
-
-      <div class="form-group">
-        <label for="arbeitsende">Dienstende:</label><br>
-        <input type="time" id="arbeitsende">
-      </div>
-
-      <div class="form-group">
-        <button id="berechnen">Pausen berechnen</button>
-        
+  
+      <!-- Charts -->
+      <div class="chart-section">
+        <canvas id="anrufdauerChart"></canvas>
+        <canvas id="nachbearbeitungszeitChart" style="margin-top: 20px;"></canvas>
+        <canvas id="klingeldauerChart" style="margin-top: 20px;"></canvas>
       </div>
     </div>
+  
+    <script src="renderer.js"></script>
+  </body>
+  
 
-    <div id="ergebnis" class="result-section">
-      Wähle einen Agenten und ein Datum, um loszulegen.
-    </div>
-  </div>
 
-  <script src="renderer.js"></script>
-</body>
 </html>
 
 

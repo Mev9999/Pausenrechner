@@ -1,0 +1,216 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Nachrichten-Archiv</title>
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      padding: 20px;
+      background-color: #f4f4f4;
+    }
+
+    h1 {
+      color: #d7261e;
+    }
+
+    .form-wrapper {
+      display: flex;
+      flex-direction: column;
+      gap: 8px;
+      max-width: 300px;
+      margin-bottom: 16px;
+    }
+
+    input[type="date"], button {
+      padding: 8px 12px;
+      font-size: 14px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+    }
+
+    button {
+      background-color: #d7261e;
+      color: white;
+      font-weight: bold;
+      cursor: pointer;
+    }
+
+    button:hover {
+      background-color: #b81f17;
+    }
+
+    #archive-status {
+      color: #555;
+      font-size: 13px;
+      margin-bottom: 12px;
+    }
+
+    #archive-messages {
+      max-height: 90vh;
+      overflow-y: auto;
+      margin-top: 20px;
+      padding: 8px;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+    }
+
+    .message-item {
+      background: #f9f9f9;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      padding: 12px;
+      margin-bottom: 16px;
+      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+    }
+
+    .message-text {
+      white-space: pre-wrap;
+      margin-top: 6px;
+    }
+
+    small {
+      color: #666;
+      font-size: 13px;
+    }
+  </style>
+</head>
+<body>
+  <h1>Nachrichten-Archiv</h1>
+
+  <div class="form-wrapper">
+    <label for="archive-start">Von:</label>
+    <input type="date" id="archive-start" />
+
+    <label for="archive-end">Bis:</label>
+    <input type="date" id="archive-end" />
+
+    <button id="archive-filter">Anzeigen</button>
+  </div>
+
+  <div id="archive-status"></div>
+  <div id="archive-messages">Keine Nachrichten geladen.</div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+    let didInitRange = false;
+
+    function askPassword() {
+      return new Promise(resolve => {
+        const ov = document.createElement('div');
+        ov.style = `
+          position:fixed;top:0;left:0;width:100%;height:100%;
+          background:rgba(0,0,0,0.5);display:flex;
+          align-items:center;justify-content:center;z-index:9999;
+        `;
+        const dlg = document.createElement('div');
+        dlg.style = `
+          background:white;padding:20px;border-radius:8px;
+          box-shadow:0 2px 10px rgba(0,0,0,0.3);
+          text-align:center;
+        `;
+        dlg.innerHTML = `
+          <p>Admin-Passwort:</p>
+          <input type="password" id="pw" style="width:200px;padding:6px;margin:10px 0;" /><br>
+          <button id="ok">OK</button>
+          <button id="cancel">Abbrechen</button>
+        `;
+        ov.appendChild(dlg);
+        document.body.appendChild(ov);
+
+        const pwInput = dlg.querySelector('#pw');
+        const okBtn = dlg.querySelector('#ok');
+        const cancel = dlg.querySelector('#cancel');
+
+        function done(val) {
+          document.body.removeChild(ov);
+          resolve(val);
+        }
+
+        pwInput.addEventListener('keydown', e => {
+          if (e.key === 'Enter') {
+            done(pwInput.value);
+          }
+        });
+
+        okBtn.onclick = () => done(pwInput.value);
+        cancel.onclick = () => done(null);
+
+        pwInput.focus();
+      });
+    }
+
+    function toInputDate(value) {
+      return new Date(value).toISOString().slice(0, 10);
+    }
+
+    async function loadAndRender(options = {}) {
+      const { resetRange = false } = options;
+      const startInput = document.getElementById('archive-start');
+      const endInput = document.getElementById('archive-end');
+      const status = document.getElementById('archive-status');
+      const container = document.getElementById('archive-messages');
+      const msgs = await ipcRenderer.invoke('load-archive');
+
+      if (!msgs.length) {
+        status.textContent = 'Keine archivierten Nachrichten vorhanden.';
+        container.innerHTML = '<p>Keine Nachrichten vorhanden.</p>';
+        return;
+      }
+
+      const oldest = msgs[msgs.length - 1].timestamp;
+      const newest = msgs[0].timestamp;
+
+      if (resetRange || !didInitRange) {
+        startInput.value = toInputDate(oldest);
+        endInput.value = toInputDate(newest);
+        didInitRange = true;
+      }
+
+      const from = startInput.value
+        ? new Date(`${startInput.value}T00:00:00`)
+        : new Date(oldest);
+      const to = endInput.value
+        ? new Date(`${endInput.value}T23:59:59`)
+        : new Date(newest);
+
+      const filtered = msgs.filter(msg => {
+        const timestamp = new Date(msg.timestamp);
+        return timestamp >= from && timestamp <= to;
+      });
+
+      status.textContent = `${filtered.length} Nachrichten im gewaehlten Zeitraum. Verfuegbar: ${new Date(oldest).toLocaleDateString()} bis ${new Date(newest).toLocaleDateString()}.`;
+
+      if (!filtered.length) {
+        container.innerHTML = '<p>Im gewaehlten Zeitraum wurden keine Nachrichten gefunden.</p>';
+        return;
+      }
+
+      container.innerHTML = filtered.map(msg => `
+        <div class="message-item">
+          <small>${new Date(msg.timestamp).toLocaleString()}</small>
+          <div class="message-text">${msg.text}</div>
+          <button class="delete-message" data-ts="${msg.timestamp}">Loeschen</button>
+        </div>
+      `).join('');
+
+      container.querySelectorAll('.delete-message').forEach(btn => {
+        btn.addEventListener('click', async () => {
+          const pwd = await askPassword();
+          if (pwd !== 'Vitachef1!') {
+            alert('Falsches Passwort!');
+            return;
+          }
+
+          await ipcRenderer.invoke('delete-message', btn.dataset.ts);
+          loadAndRender();
+        });
+      });
+    }
+
+    document.getElementById('archive-filter').addEventListener('click', () => loadAndRender());
+    loadAndRender({ resetRange: true });
+  </script>
+</body>
+</html>

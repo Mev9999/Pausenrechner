@@ -1,17 +1,22 @@
-Auto Update vornehmen:
+Release-Ablauf
 
-- Änderungen machen im code und in der package.json die version erhöhen 1.0.0 auf zb 1.0.1
+Diese App zieht Updates aus GitHub Releases des Repositories:
+https://github.com/Mev9999/Pausenrechner
+
+Wichtig:
+- Fuer jedes neue Rollout muss die Version in package.json erhoeht werden.
+- Ein Push auf den Branch main startet automatisch den GitHub-Workflow unter .github/workflows/release.yml.
+- Der Workflow baut den Windows-Installer, laedt latest.yml plus Setup-Datei in ein GitHub Release hoch und die installierten Clients koennen das Update dann finden.
+
+Empfohlener Ablauf:
+1. Code aendern.
+2. Version in package.json erhoehen, zum Beispiel von 1.9.2 auf 1.9.3.
+3. Alles mit GitHub Desktop committen und nach main pushen.
+4. In GitHub unter Actions kurz pruefen, ob der Release-Workflow erfolgreich war.
+
+Lokaler Test:
+- npm install
 - npm run build
-- npm run publish
-=======
-Zusatzinfo:
 
-- der Token muss erneuert werden nach 1 Monat: https://github.com/settings/tokens
--  "Generate new token (classic)" for general use - wählen und folgendes anhaken:
-✅ repo
-✅ workflow
-✅ write:packages
-- Ablaufdatum und Name setzen und generieren, danach im VS Studio folgenden Befehl mit dem neuen Token:
-$env:GH_TOKEN="DEIN_NEUER_TOKEN_HIER"
-npm run publish
-
+Hinweis:
+Wenn dieselbe Versionsnummer erneut gepusht wird, bekommen die Clients kein neues Update. Dann muss die Versionsnummer erneut hochgesetzt werden.

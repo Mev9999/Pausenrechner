@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+  <meta charset="UTF-8">
+  <title>Wichtige Nachricht</title>
+  <style>
+    html, body {
+      margin: 0; padding: 0;
+      width: 100%; height: 100%;
+      overflow: hidden;
+      display: flex; align-items: center; justify-content: center;
+      background-color: #ff4d4d;
+      animation: blink-bg 1s step-start infinite;
+      font-family: "Segoe UI", sans-serif;
+    }
+    @keyframes blink-bg {
+      50% { background-color: #ff1a1a; }
+    }
+    #container {
+  width: 90%;
+  max-width: none;
+
+  /* Nimm das max-height als absolute Höhe:
+     der Container füllt jetzt stets 90% der Viewport-Höhe und wächst mit dem Fenster */
+  height: 90vh;
+  /* optional noch eine obere Grenze, falls er nie größer als z.B. 600px werden soll:
+     max-height: 600px; */
+
+  background: rgba(0,0,0,0.1);
+  padding: 10px;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
+  border-radius: 8px;
+}
+
+
+#message {
+  flex: 1;
+  overflow-y: auto;
+
+  /* Wichtig für Spalten! */
+  font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+  white-space: pre-wrap;           /* alle Leerzeichen/Zeilenumbrüche 1:1 */
+  tab-size: 4;                /* Tabs = 4 Leerzeichen (nach Wunsch) */
+  font-variant-ligatures: none;
+
+  font-size: 12px;
+  line-height: 1.3;
+  color: white;
+  word-wrap: break-word;      /* kann drin bleiben */
+  margin-bottom: 10px;
+}
+
+
+    #close-btn {
+      display: none;
+      align-self: center;
+      padding: 8px 16px;
+      font-size: 12px;
+      border: none;
+      border-radius: 6px;
+      cursor: pointer;
+    }
+  </style>
+</head>
+<body>
+  <div id="container">
+    <div id="message">…lade Nachricht…</div>
+    <button id="close-btn">Schließen</button>
+  </div>
+  <script>
+    const { ipcRenderer } = require('electron');
+    ipcRenderer.on('init-message', (e,msg)=>{ document.getElementById('message').innerText = msg; });
+    ipcRenderer.on('update-message',(e,msg)=>{ document.getElementById('message').innerText = msg; });
+    ipcRenderer.on('enable-close',()=>{ document.getElementById('close-btn').style.display='block'; });
+    document.getElementById('close-btn').addEventListener('click',()=>window.close());
+  </script>
+</body>
+</html>
