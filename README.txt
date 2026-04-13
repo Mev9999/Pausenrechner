@@ -10,7 +10,7 @@ Wichtig:
 
 Empfohlener Ablauf:
 1. Code aendern.
-2. Version in package.json erhoehen, zum Beispiel von 1.9.3 auf 1.9.4.
+2. Version in package.json erhoehen, zum Beispiel von 1.9.4 auf 1.9.5.
 3. Alles mit GitHub Desktop committen und nach main pushen.
 4. In GitHub unter Actions kurz pruefen, ob der Release-Workflow erfolgreich war.
 

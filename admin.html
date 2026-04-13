@@ -3,217 +3,329 @@
 <head>
   <meta charset="UTF-8" />
   <title>Admin Bereich - Manuelle Pausen</title>
-<style>
-  /* Grundlayout */
-  body {
-    font-family: "Segoe UI", sans-serif;
-    margin: 0;
-    height: 100vh;
-    display: flex;
-    flex-direction: column;
-  }
-  .header {
-    padding: 20px 30px;
-    border-bottom: 1px solid #ccc;
-    display: flex;
-    align-items: center;
-    background: #fafafa;
-  }
-  .header img.logo { height: 50px; margin-right: 20px; }
-  .header h1 { color: #d7261e; margin: 0; font-size: 1.5rem; }
+  <style>
+    body {
+      font-family: "Segoe UI", sans-serif;
+      margin: 0;
+      height: 100vh;
+      display: flex;
+      flex-direction: column;
+    }
 
-  /* Login-Screen */
-  #login {
-    flex: 1;
-    display: flex;
-    align-items: center;
-    justify-content: center;
-  }
-  #login div {
-    background: #f9f9f9;
-    padding: 30px;
-    border: 1px solid #ccc;
-    border-radius: 8px;
-    text-align: center;
-    width: 300px;
-    max-width: 90vw;
-  }
-  #login input,
-  #login button {
-    width: 100%;
-    box-sizing: border-box;
-    margin: 10px 0;
-  }
+    .header {
+      padding: 20px 30px;
+      border-bottom: 1px solid #ccc;
+      display: flex;
+      align-items: center;
+      background: #fafafa;
+    }
 
-  /* Hauptbereich */
-  #app {
-    flex: 1;
-    display: none;
-    overflow: hidden;
-  }
-  #chat-container {
-    display: flex;
-    height: 100%;
-  }
+    .header img.logo {
+      height: 50px;
+      margin-right: 20px;
+    }
 
-  /* linke Sidebar */
-  #chat-sidebar {
-    flex: 0 0 200px;
-    border-right: 1px solid #ccc;
-    padding: 20px 10px;
-    box-sizing: border-box;
-    overflow-y: auto;
-    background: #f7f7f7;
-  }
-  #chat-sidebar h3 { margin-top: 0; font-size: 1.1rem; color: #333; }
-  #chat-clients {
-    list-style: none;
-    padding: 0;
-    margin: 0;
-  }
-  #chat-clients li {
-    padding: 8px 12px;
-    margin-bottom: 6px;
-    background: white;
-    border-radius: 4px;
-    cursor: pointer;
-    transition: background 0.2s;
-  }
-  #chat-clients li:hover { background: #eaeaea; }
+    .header h1 {
+      color: #d7261e;
+      margin: 0;
+      font-size: 1.5rem;
+    }
 
-  /* mittlere Spalte: Chat-Inhalte */
-  #chat-main {
-    flex: 1;
-    padding: 20px 30px;
-    box-sizing: border-box;
-    overflow-y: auto;
-    position: relative;
-  }
-  /* deine Formular-Elemente im Chat-Main */
-  #chat-main label,
-  #chat-main select,
-  #chat-main input,
-  #chat-main textarea,
-  #chat-main button {
-    display: block;
-    margin-bottom: 10px;
-    font-size: 1rem;
-  }
-  #chat-main select,
-  #chat-main input[type="date"],
-  #chat-main textarea {
-    padding: 8px;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    width: 100%;
-    box-sizing: border-box;
-  }
-  #chat-main button {
-    padding: 8px 12px;
-    border: none;
-    border-radius: 6px;
-    background: #d7261e;
-    color: white;
-    cursor: pointer;
-  }
-  #chat-main button:hover { background: #b81f17; }
+    #login {
+      flex: 1;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
 
-  /* sehr schmaler Lösch-Button neben jeder Pause */
-  #chat-main button.delete-button {
-    padding: 2px 6px;
-    font-size: 0.85rem;
-    line-height: 1;
-    border-radius: 3px;
-    display: inline-block;
-    vertical-align: middle;
-    margin-left: 0.5em;
-  }
-  #chat-main button.delete-button:hover {
-    background-color: #e60000;
-  }
+    #login div {
+      background: #f9f9f9;
+      padding: 30px;
+      border: 1px solid #ccc;
+      border-radius: 8px;
+      text-align: center;
+      width: 300px;
+      max-width: 90vw;
+    }
 
-  /* rechte Spalte: Sonderpausen-Panel */
-  #sonderpausen-output {
-    flex: 0 0 400px;      /* hier die Breite einstellen */
-    margin: 20px;         /* rundherum Abstand */
-    padding: 15px;
-    background: #f7f7f7;
-    border: 1px solid #ccc;
-    border-radius: 6px;
-    overflow-y: auto;
-    box-shadow: 0 2px 4px rgba(0,0,0,0.1);
-  }
+    #login input,
+    #login button {
+      width: 100%;
+      box-sizing: border-box;
+      margin: 10px 0;
+    }
 
-  /* Pause-Tabelle unterhalb der Filter innerhalb von #chat-main */
-  #chat-main table {
-    width: 100%;
-    border-collapse: collapse;
-    margin-top: 20px;
-  }
-  #chat-main th,
-  #chat-main td {
-    border: 1px solid #ccc;
-    padding: 8px;
-    text-align: left;
-  }
-  #chat-main th {
-    background-color: #f7f7f7;
-  }
+    #app {
+      flex: 1;
+      display: none;
+      overflow: hidden;
+    }
 
-  .info {
-    margin-top: 20px;
-    font-weight: bold;
-    color: green;
-  }
-  #alert-text {
-    font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
-    tab-size: 4;
-    white-space: pre; /* mehrere Leerzeichen bleiben erhalten */
-  }
-</style>
+    #chat-container {
+      display: flex;
+      height: 100%;
+    }
 
+    #chat-sidebar {
+      flex: 0 0 200px;
+      border-right: 1px solid #ccc;
+      padding: 20px 10px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      background: #f7f7f7;
+    }
 
+    #chat-sidebar h3 {
+      margin-top: 0;
+      font-size: 1.1rem;
+      color: #333;
+    }
 
+    #chat-clients {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+    }
+
+    #chat-clients li {
+      padding: 8px 12px;
+      margin-bottom: 6px;
+      background: white;
+      border-radius: 4px;
+      cursor: pointer;
+      transition: background 0.2s;
+    }
+
+    #chat-clients li:hover {
+      background: #eaeaea;
+    }
+
+    #chat-main {
+      flex: 1;
+      padding: 20px 30px;
+      box-sizing: border-box;
+      overflow-y: auto;
+      position: relative;
+    }
+
+    #chat-main label,
+    #chat-main select,
+    #chat-main input,
+    #chat-main textarea,
+    #chat-main button {
+      display: block;
+      margin-bottom: 10px;
+      font-size: 1rem;
+    }
+
+    #chat-main select,
+    #chat-main input[type="date"],
+    #chat-main input[type="datetime-local"],
+    #chat-main textarea {
+      padding: 8px;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      width: 100%;
+      box-sizing: border-box;
+    }
+
+    #chat-main button {
+      padding: 8px 12px;
+      border: none;
+      border-radius: 6px;
+      background: #d7261e;
+      color: white;
+      cursor: pointer;
+    }
+
+    #chat-main button:hover {
+      background: #b81f17;
+    }
+
+    #chat-main button.delete-button {
+      padding: 2px 6px;
+      font-size: 0.85rem;
+      line-height: 1;
+      border-radius: 3px;
+      display: inline-block;
+      vertical-align: middle;
+      margin-left: 0.5em;
+    }
+
+    #chat-main button.delete-button:hover {
+      background-color: #e60000;
+    }
+
+    #sonderpausen-output {
+      flex: 0 0 400px;
+      margin: 20px;
+      padding: 15px;
+      background: #f7f7f7;
+      border: 1px solid #ccc;
+      border-radius: 6px;
+      overflow-y: auto;
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+    }
+
+    #chat-main table {
+      width: 100%;
+      border-collapse: collapse;
+      margin-top: 20px;
+    }
+
+    #chat-main th,
+    #chat-main td {
+      border: 1px solid #ccc;
+      padding: 8px;
+      text-align: left;
+    }
+
+    #chat-main th {
+      background-color: #f7f7f7;
+    }
+
+    .info {
+      margin-top: 20px;
+      font-weight: bold;
+      color: green;
+    }
+
+    #alert-text,
+    .scheduled-alert-text {
+      font-family: "Cascadia Mono", "Consolas", "Courier New", monospace;
+      tab-size: 4;
+      white-space: pre-wrap;
+    }
+
+    .message-options {
+      display: flex;
+      flex-direction: column;
+      gap: 10px;
+      margin-bottom: 12px;
+    }
+
+    .inline-option {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-weight: 600;
+      margin-bottom: 0;
+    }
+
+    .recipient-wrap,
+    .schedule-wrap,
+    .scheduled-alerts {
+      border: 1px solid #ddd;
+      border-radius: 8px;
+      background: #fafafa;
+      padding: 12px;
+    }
+
+    .recipient-wrap.is-disabled,
+    .schedule-wrap.is-disabled {
+      opacity: 0.6;
+    }
+
+    .recipient-actions {
+      display: flex;
+      gap: 8px;
+      margin-bottom: 10px;
+      flex-wrap: wrap;
+    }
+
+    #chat-main .recipient-actions button,
+    #chat-main .scheduled-alert-item button {
+      background: #666;
+    }
+
+    #chat-main .recipient-actions button:hover,
+    #chat-main .scheduled-alert-item button:hover {
+      background: #4f4f4f;
+    }
+
+    .recipient-list {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+      gap: 8px;
+      max-height: 180px;
+      overflow-y: auto;
+    }
+
+    .recipient-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin: 0;
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 8px 10px;
+    }
+
+    .scheduled-alerts h3 {
+      margin-top: 0;
+      margin-bottom: 10px;
+    }
+
+    .scheduled-alert-item {
+      background: white;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .scheduled-alert-head {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+      margin-bottom: 6px;
+    }
+
+    .scheduled-alert-meta {
+      color: #555;
+      font-size: 0.9rem;
+      margin-bottom: 6px;
+    }
+
+    .muted-message {
+      color: #666;
+      margin: 0;
+    }
+  </style>
 </head>
 <body>
-
   <header class="header">
-    <img src="logo-hsp-serviceline-1024x289.png" class="logo" alt="Logo">
+    <img src="logo-hsp-serviceline-1024x289.png" class="logo" alt="Logo" />
     <h1>Admin Bereich - Manuelle Pausen</h1>
   </header>
 
-  <!-- Login-Screen -->
   <div id="login">
     <div>
-      <label for="admin-password">Passwort:</label><br>
+      <label for="admin-password">Passwort:</label><br />
       <div style="position: relative; display: block; width: 300px; max-width: 90vw; box-sizing: border-box; margin: 0 auto;">
-        <input 
-          type="password" 
-          id="admin-password" 
-          placeholder="Admin-Passwort" 
-          style="width: 100%; box-sizing: border-box; padding-right: 30px;" 
-          autofocus 
+        <input
+          type="password"
+          id="admin-password"
+          placeholder="Admin-Passwort"
+          style="width: 100%; box-sizing: border-box; padding-right: 30px;"
+          autofocus
           tabindex="1"
         />
-        <span id="toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">👁️</span>
+        <span id="toggle-password" style="position: absolute; right: 10px; top: 50%; transform: translateY(-50%); cursor: pointer;">Auge</span>
       </div>
       <button id="login-button">Login</button>
     </div>
   </div>
 
-  <!-- Haupt-Anwendung -->
   <div id="app">
     <div id="chat-container">
-
-      <!-- 1) Sidebar mit Chat-Clients -->
       <aside id="chat-sidebar">
         <h3>Chats</h3>
-        <ul id="chat-clients">
-          <!-- per JS befüllt -->
-        </ul>
+        <ul id="chat-clients"></ul>
       </aside>
 
-      <!-- 2) Mittlerer Bereich: Filter, Chat & Tabelle -->
       <div id="chat-main">
         <label for="start">Startdatum:</label>
         <input type="date" id="start" />
@@ -226,18 +338,52 @@
           <option value="">Alle Agenten</option>
         </select>
 
-        <button id="filter-button">🔍 Filtern</button>
-        <button id="export-button">📁 Exportieren (Excel)</button>
+        <button id="filter-button">Filtern</button>
+        <button id="export-button">Exportieren (Excel)</button>
 
-        <hr style="margin:20px 0;">
+        <hr style="margin: 20px 0;" />
 
-        <label for="alert-text">🔔 Nachricht an alle Clients:</label>
+        <label for="alert-text">Nachricht:</label>
         <textarea id="alert-text" rows="3"></textarea>
-        <button id="alert-send">📣 Senden</button>
+
+        <div class="message-options">
+          <label class="inline-option" for="alert-all-clients">
+            <input type="checkbox" id="alert-all-clients" checked />
+            An alle PCs senden
+          </label>
+
+          <div class="recipient-wrap is-disabled" id="alert-recipient-wrap">
+            <div class="recipient-actions">
+              <button type="button" id="alert-select-all">Alle markieren</button>
+              <button type="button" id="alert-clear-all">Auswahl loeschen</button>
+            </div>
+            <div id="alert-recipients" class="recipient-list">
+              <p class="muted-message">PC-Liste wird geladen...</p>
+            </div>
+          </div>
+
+          <label class="inline-option" for="alert-schedule-enabled">
+            <input type="checkbox" id="alert-schedule-enabled" />
+            Versand fuer spaeter planen
+          </label>
+
+          <div class="schedule-wrap is-disabled" id="alert-schedule-wrap">
+            <label for="alert-schedule-at">Senden am:</label>
+            <input type="datetime-local" id="alert-schedule-at" />
+          </div>
+        </div>
+
+        <button id="alert-send">Senden</button>
+
+        <div class="scheduled-alerts">
+          <h3>Geplante Nachrichten</h3>
+          <div id="scheduled-alerts-list">
+            <p class="muted-message">Keine geplanten Nachrichten.</p>
+          </div>
+        </div>
 
         <div id="output"></div>
 
-        <!-- Tabelle der manuellen Pausen -->
         <table>
           <thead>
             <tr>
@@ -255,15 +401,12 @@
         <div class="info" id="gesamt-dauer"></div>
       </div>
 
-      <!-- 3) Rechte Spalte: Sonderpausen -->
       <div id="sonderpausen-output">
         <p>Sonderpausen werden geladen...</p>
       </div>
-
     </div>
   </div>
 
   <script src="admin.js" defer></script>
 </body>
-
 </html>

@@ -1,7 +1,7 @@
 <!DOCTYPE html>
 <html lang="de">
 <head>
-  <meta charset="UTF-8">
+  <meta charset="UTF-8" />
   <title>Nachrichten-Archiv</title>
   <style>
     body {
@@ -22,7 +22,8 @@
       margin-bottom: 16px;
     }
 
-    input[type="date"], button {
+    input[type="date"],
+    button {
       padding: 8px 12px;
       font-size: 14px;
       border: 1px solid #ccc;
@@ -62,12 +63,18 @@
       border-radius: 8px;
       padding: 12px;
       margin-bottom: 16px;
-      box-shadow: 0 2px 4px rgba(0,0,0,0.05);
+      box-shadow: 0 2px 4px rgba(0, 0, 0, 0.05);
     }
 
     .message-text {
       white-space: pre-wrap;
-      margin-top: 6px;
+      margin-top: 8px;
+    }
+
+    .message-meta {
+      color: #666;
+      font-size: 13px;
+      margin-top: 4px;
     }
 
     small {
@@ -96,47 +103,67 @@
     const { ipcRenderer } = require('electron');
     let didInitRange = false;
 
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
+
     function askPassword() {
       return new Promise(resolve => {
-        const ov = document.createElement('div');
-        ov.style = `
-          position:fixed;top:0;left:0;width:100%;height:100%;
-          background:rgba(0,0,0,0.5);display:flex;
-          align-items:center;justify-content:center;z-index:9999;
+        const overlay = document.createElement('div');
+        overlay.style = `
+          position: fixed;
+          top: 0;
+          left: 0;
+          width: 100%;
+          height: 100%;
+          background: rgba(0,0,0,0.5);
+          display: flex;
+          align-items: center;
+          justify-content: center;
+          z-index: 9999;
         `;
-        const dlg = document.createElement('div');
-        dlg.style = `
-          background:white;padding:20px;border-radius:8px;
-          box-shadow:0 2px 10px rgba(0,0,0,0.3);
-          text-align:center;
+
+        const dialog = document.createElement('div');
+        dialog.style = `
+          background: white;
+          padding: 20px;
+          border-radius: 8px;
+          box-shadow: 0 2px 10px rgba(0,0,0,0.3);
+          text-align: center;
         `;
-        dlg.innerHTML = `
+
+        dialog.innerHTML = `
           <p>Admin-Passwort:</p>
-          <input type="password" id="pw" style="width:200px;padding:6px;margin:10px 0;" /><br>
+          <input type="password" id="pw" style="width: 200px; padding: 6px; margin: 10px 0;" /><br>
           <button id="ok">OK</button>
           <button id="cancel">Abbrechen</button>
         `;
-        ov.appendChild(dlg);
-        document.body.appendChild(ov);
 
-        const pwInput = dlg.querySelector('#pw');
-        const okBtn = dlg.querySelector('#ok');
-        const cancel = dlg.querySelector('#cancel');
+        overlay.appendChild(dialog);
+        document.body.appendChild(overlay);
 
-        function done(val) {
-          document.body.removeChild(ov);
-          resolve(val);
+        const pwInput = dialog.querySelector('#pw');
+        const okBtn = dialog.querySelector('#ok');
+        const cancelBtn = dialog.querySelector('#cancel');
+
+        function done(value) {
+          document.body.removeChild(overlay);
+          resolve(value);
         }
 
-        pwInput.addEventListener('keydown', e => {
-          if (e.key === 'Enter') {
+        pwInput.addEventListener('keydown', event => {
+          if (event.key === 'Enter') {
             done(pwInput.value);
           }
         });
 
         okBtn.onclick = () => done(pwInput.value);
-        cancel.onclick = () => done(null);
-
+        cancelBtn.onclick = () => done(null);
         pwInput.focus();
       });
     }
@@ -145,22 +172,30 @@
       return new Date(value).toISOString().slice(0, 10);
     }
 
+    function formatRecipients(onlyFor) {
+      return Array.isArray(onlyFor) && onlyFor.length ? onlyFor.join(', ') : 'Alle PCs';
+    }
+
+    function formatDisplayDate(value) {
+      return new Date(value).toLocaleString();
+    }
+
     async function loadAndRender(options = {}) {
       const { resetRange = false } = options;
       const startInput = document.getElementById('archive-start');
       const endInput = document.getElementById('archive-end');
       const status = document.getElementById('archive-status');
       const container = document.getElementById('archive-messages');
-      const msgs = await ipcRenderer.invoke('load-archive');
+      const messages = await ipcRenderer.invoke('load-archive');
 
-      if (!msgs.length) {
+      if (!messages.length) {
         status.textContent = 'Keine archivierten Nachrichten vorhanden.';
         container.innerHTML = '<p>Keine Nachrichten vorhanden.</p>';
         return;
       }
 
-      const oldest = msgs[msgs.length - 1].timestamp;
-      const newest = msgs[0].timestamp;
+      const oldest = messages[messages.length - 1].timestamp;
+      const newest = messages[0].timestamp;
 
       if (resetRange || !didInitRange) {
         startInput.value = toInputDate(oldest);
@@ -175,8 +210,8 @@
         ? new Date(`${endInput.value}T23:59:59`)
         : new Date(newest);
 
-      const filtered = msgs.filter(msg => {
-        const timestamp = new Date(msg.timestamp);
+      const filtered = messages.filter(message => {
+        const timestamp = new Date(message.timestamp);
         return timestamp >= from && timestamp <= to;
       });
 
@@ -187,23 +222,25 @@
         return;
       }
 
-      container.innerHTML = filtered.map(msg => `
+      container.innerHTML = filtered.map(message => `
         <div class="message-item">
-          <small>${new Date(msg.timestamp).toLocaleString()}</small>
-          <div class="message-text">${msg.text}</div>
-          <button class="delete-message" data-ts="${msg.timestamp}">Loeschen</button>
+          <small>${escapeHtml(formatDisplayDate(message.timestamp))}</small>
+          ${message.scheduledFor ? `<div class="message-meta">Geplant fuer: ${escapeHtml(formatDisplayDate(message.scheduledFor))}</div>` : ''}
+          <div class="message-meta">Empfaenger: ${escapeHtml(formatRecipients(message.onlyFor))}</div>
+          <div class="message-text">${escapeHtml(message.text)}</div>
+          <button class="delete-message" data-id="${escapeHtml(message.id)}">Loeschen</button>
         </div>
       `).join('');
 
-      container.querySelectorAll('.delete-message').forEach(btn => {
-        btn.addEventListener('click', async () => {
-          const pwd = await askPassword();
-          if (pwd !== 'Vitachef1!') {
+      container.querySelectorAll('.delete-message').forEach(button => {
+        button.addEventListener('click', async () => {
+          const password = await askPassword();
+          if (password !== 'Vitachef1!') {
             alert('Falsches Passwort!');
             return;
           }
 
-          await ipcRenderer.invoke('delete-message', btn.dataset.ts);
+          await ipcRenderer.invoke('delete-message', button.dataset.id);
           loadAndRender();
         });
       });

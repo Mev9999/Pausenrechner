@@ -33,16 +33,119 @@ require(path.join(__dirname, 'chat.js'));
 // ===========================
 const folderPath        = '\\\\svrstorage\\Telefondatenbanken\\ServicelineReports\\Pausenzeiten';
 const messagesFile      = path.join(folderPath, 'nachrichten.json');
+const scheduledMessagesFile = path.join(folderPath, 'nachrichten_geplant.json');
 const messagesLockFile  = path.join(folderPath, 'nachrichten.json.lock');
 const getPauseDateiPfad = () => path.join(folderPath, `${os.hostname()}.json`);
 const getSonderPauseDateiPfad = () => path.join(folderPath, 'sonderpausen.json');
 const MESSAGE_LOCK_TIMEOUT_MS = 15000;
 const MESSAGE_LOCK_RETRY_MS = 150;
 const MESSAGE_LOCK_STALE_MS = 60000;
-// Merkt sich alle Timestamps, die wir in dieser Session schon angezeigt haben
+const MESSAGE_POLL_INTERVAL_MS = 30000;
 const shownMessages = new Set();
+let messagePollTimer = null;
+let isProcessingScheduledMessages = false;
 
 const sleep = ms => new Promise(resolve => setTimeout(resolve, ms));
+
+function uniqueStrings(values = []) {
+  return Array.from(new Set(
+    (Array.isArray(values) ? values : [])
+      .map(value => String(value || '').trim())
+      .filter(Boolean)
+  ));
+}
+
+function createMessageId() {
+  return `${Date.now()}-${Math.random().toString(16).slice(2, 10)}`;
+}
+
+function normalizeScheduledFor(value) {
+  if (!value) {
+    return null;
+  }
+
+  const parsed = dayjs(value);
+  return parsed.isValid() ? parsed.toISOString() : null;
+}
+
+function getMessageKey(message) {
+  if (!message) {
+    return null;
+  }
+
+  return message.id ? String(message.id) : String(message.timestamp || '');
+}
+
+function getMessageDueAt(message) {
+  return normalizeScheduledFor(message?.scheduledFor || message?.deliverAt) || message?.timestamp || null;
+}
+
+function isMessageDue(message, now = dayjs()) {
+  const dueAt = getMessageDueAt(message);
+  if (!dueAt) {
+    return true;
+  }
+
+  const parsed = dayjs(dueAt);
+  return !parsed.isValid() || parsed.valueOf() <= now.valueOf();
+}
+
+function normalizeMessageRecord(message = {}) {
+  if (!message || typeof message !== 'object') {
+    return null;
+  }
+
+  const text = String(message.text || '').trim();
+  if (!text) {
+    return null;
+  }
+
+  const timestamp = message.timestamp || dayjs().format();
+  return {
+    id: message.id ? String(message.id) : null,
+    text,
+    timestamp,
+    createdAt: message.createdAt || timestamp,
+    scheduledFor: normalizeScheduledFor(message.scheduledFor || message.deliverAt),
+    onlyFor: uniqueStrings(message.onlyFor),
+    seenBy: uniqueStrings(message.seenBy)
+  };
+}
+
+function createImmediateMessage(payload = {}) {
+  const now = dayjs().format();
+  return {
+    id: createMessageId(),
+    text: String(payload.text || '').trim(),
+    timestamp: now,
+    createdAt: now,
+    scheduledFor: null,
+    onlyFor: uniqueStrings(payload.onlyFor),
+    seenBy: []
+  };
+}
+
+function createScheduledMessage(payload = {}) {
+  const text = String(payload.text || '').trim();
+  const scheduledFor = normalizeScheduledFor(payload.scheduledFor || payload.deliverAt);
+  if (!text) {
+    throw new Error('Nachricht enthaelt keinen Text.');
+  }
+  if (!scheduledFor) {
+    throw new Error('Geplante Nachricht hat keine gueltige Versandzeit.');
+  }
+
+  const now = dayjs().format();
+  return {
+    id: createMessageId(),
+    text,
+    timestamp: now,
+    createdAt: now,
+    scheduledFor,
+    onlyFor: uniqueStrings(payload.onlyFor),
+    seenBy: []
+  };
+}
 
 async function acquireMessagesLock() {
   const deadline = Date.now() + MESSAGE_LOCK_TIMEOUT_MS;
@@ -97,48 +200,60 @@ async function withMessagesFileLock(task) {
   }
 }
 
-async function backupUnreadableMessagesFile() {
-  const backupPath = `${messagesFile}.${Date.now()}.bak`;
+async function backupUnreadableFile(filePath) {
+  const backupPath = `${filePath}.${Date.now()}.bak`;
 
   try {
-    await fs.promises.copyFile(messagesFile, backupPath);
+    await fs.promises.copyFile(filePath, backupPath);
     return backupPath;
   } catch (_) {
     return null;
   }
 }
 
-async function writeMessagesAtomic(all) {
+async function backupUnreadableMessagesFile() {
+  return backupUnreadableFile(messagesFile);
+}
+
+async function writeJsonArrayAtomic(targetFile, all) {
   if (!Array.isArray(all)) {
-    throw new Error('Nachrichten muessen als Array gespeichert werden.');
+    throw new Error('JSON-Datei muss als Array gespeichert werden.');
   }
 
-  const tempPath = path.join(folderPath, `nachrichten.json.${process.pid}.${Date.now()}.tmp`);
+  const tempPath = path.join(folderPath, `${path.basename(targetFile)}.${process.pid}.${Date.now()}.tmp`);
   const payload = `${JSON.stringify(all, null, 2)}\n`;
 
   try {
     await fs.promises.writeFile(tempPath, payload, 'utf8');
-    await fs.promises.rename(tempPath, messagesFile);
+    await fs.promises.rename(tempPath, targetFile);
   } finally {
     await fs.promises.unlink(tempPath).catch(() => {});
   }
 }
 
-async function readMessagesFromDisk({ createIfMissing = false } = {}) {
+async function writeMessagesAtomic(all) {
+  return writeJsonArrayAtomic(messagesFile, all);
+}
+
+async function writeScheduledMessagesAtomic(all) {
+  return writeJsonArrayAtomic(scheduledMessagesFile, all);
+}
+
+async function readJsonArrayFromDisk(targetFile, { createIfMissing = false } = {}) {
   try {
-    await fs.promises.access(messagesFile, fs.constants.R_OK);
+    await fs.promises.access(targetFile, fs.constants.R_OK);
   } catch (err) {
     if (err.code === 'ENOENT' && createIfMissing) {
-      await writeMessagesAtomic([]);
+      await writeJsonArrayAtomic(targetFile, []);
       return [];
     }
 
     throw err;
   }
 
-  const raw = await fs.promises.readFile(messagesFile, 'utf8');
+  const raw = await fs.promises.readFile(targetFile, 'utf8');
   if (!raw.trim()) {
-    const error = new Error(`'${messagesFile}' ist leer.`);
+    const error = new Error(`'${targetFile}' ist leer.`);
     error.code = 'EMPTY_MESSAGES_FILE';
     throw error;
   }
@@ -152,12 +267,20 @@ async function readMessagesFromDisk({ createIfMissing = false } = {}) {
   }
 
   if (!Array.isArray(parsed)) {
-    const error = new Error(`'${messagesFile}' muss ein JSON-Array enthalten.`);
+    const error = new Error(`'${targetFile}' muss ein JSON-Array enthalten.`);
     error.code = 'INVALID_MESSAGES_SHAPE';
     throw error;
   }
 
   return parsed;
+}
+
+async function readMessagesFromDisk(options = {}) {
+  return readJsonArrayFromDisk(messagesFile, options);
+}
+
+async function readScheduledMessagesFromDisk(options = {}) {
+  return readJsonArrayFromDisk(scheduledMessagesFile, options);
 }
 
 async function updateMessages(mutator) {
@@ -174,6 +297,112 @@ async function updateMessages(mutator) {
     await writeMessagesAtomic(finalMessages);
     return finalMessages;
   });
+}
+
+async function readScheduledMessages() {
+  try {
+    return await readScheduledMessagesFromDisk();
+  } catch (error) {
+    if (error.code === 'ENOENT') {
+      return withMessagesFileLock(() => readScheduledMessagesFromDisk({ createIfMissing: true }));
+    }
+
+    console.error(`Fehler beim Lesen/Parsen von '${scheduledMessagesFile}':`, error.message);
+    const backupPath = await backupUnreadableFile(scheduledMessagesFile);
+
+    throw new Error(
+      backupPath
+        ? `Korrupte oder leere JSON in ${scheduledMessagesFile}. Backup unter ${backupPath}. Bitte Datei pruefen.`
+        : `Korrupte oder leere JSON in ${scheduledMessagesFile}. Bitte Datei pruefen.`
+    );
+  }
+}
+
+async function queueScheduledMessage(message) {
+  return withMessagesFileLock(async () => {
+    const scheduledMessages = await readScheduledMessagesFromDisk({ createIfMissing: true });
+    scheduledMessages.push(message);
+    await writeScheduledMessagesAtomic(scheduledMessages);
+    return message;
+  });
+}
+
+async function promoteDueScheduledMessages() {
+  if (isProcessingScheduledMessages) {
+    return 0;
+  }
+
+  isProcessingScheduledMessages = true;
+
+  try {
+    return await withMessagesFileLock(async () => {
+      const scheduledMessages = await readScheduledMessagesFromDisk({ createIfMissing: true });
+      if (!scheduledMessages.length) {
+        return 0;
+      }
+
+      const now = dayjs();
+      const dueMessages = [];
+      const remainingMessages = [];
+
+      scheduledMessages.forEach(rawMessage => {
+        const message = normalizeMessageRecord(rawMessage);
+        if (!message) {
+          return;
+        }
+
+        if (isMessageDue(message, now)) {
+          dueMessages.push(message);
+        } else {
+          remainingMessages.push(message);
+        }
+      });
+
+      if (!dueMessages.length) {
+        return 0;
+      }
+
+      const liveMessages = await readMessagesFromDisk({ createIfMissing: true });
+      dueMessages
+        .sort((a, b) => dayjs(getMessageDueAt(a)).valueOf() - dayjs(getMessageDueAt(b)).valueOf())
+        .forEach(message => {
+          liveMessages.push({
+            id: message.id || createMessageId(),
+            text: message.text,
+            timestamp: message.scheduledFor || dayjs().format(),
+            createdAt: message.createdAt || message.timestamp,
+            scheduledFor: message.scheduledFor,
+            onlyFor: uniqueStrings(message.onlyFor),
+            seenBy: []
+          });
+        });
+
+      await writeMessagesAtomic(liveMessages);
+      await writeScheduledMessagesAtomic(remainingMessages);
+      return dueMessages.length;
+    });
+  } finally {
+    isProcessingScheduledMessages = false;
+  }
+}
+
+function startMessagePolling() {
+  if (messagePollTimer) {
+    return;
+  }
+
+  messagePollTimer = setInterval(() => {
+    promoteDueScheduledMessages()
+      .then(promotedCount => {
+        if (promotedCount > 0) {
+          return showMissedMessages();
+        }
+        return null;
+      })
+      .catch(error => {
+        console.error('Fehler beim Verarbeiten geplanter Nachrichten:', error);
+      });
+  }, MESSAGE_POLL_INTERVAL_MS);
 }
 
 
@@ -200,8 +429,10 @@ if (!gotTheLock) {
   app.whenReady().then(async () => {
     startApp();
     initAlert();
+    await promoteDueScheduledMessages();
     await showMissedMessages();
     setupWatcher();
+    startMessagePolling();
   });
 }
 
@@ -466,7 +697,7 @@ async function showMissedMessages() {
 // 🔄 File-Watcher
 // ===========================
 function setupWatcher() {
-  const watcher = chokidar.watch(messagesFile, {
+  const watcher = chokidar.watch([messagesFile, scheduledMessagesFile], {
     ignoreInitial:true,
     awaitWriteFinish:{ stabilityThreshold:200, pollInterval:100 }
   });
@@ -478,7 +709,8 @@ function setupWatcher() {
     }
     clearTimeout(timer);
     timer = setTimeout(async() => {
-      console.log('📩 Datei geändert, prüfe neue Nachrichten…');
+      console.log('📩 Nachrichtendatei geaendert, pruefe neue und geplante Nachrichten...');
+      await promoteDueScheduledMessages();
       await showMissedMessages();
     }, 300);
   });
@@ -705,27 +937,34 @@ async function showMissedMessages() {
     const all = await readMessages();
 
     const queue = all
+      .map(message => normalizeMessageRecord(message))
       .filter(message => {
-        const seen = Array.isArray(message.seenBy) && message.seenBy.includes(hostname);
-        const onlyFor = Array.isArray(message.onlyFor) ? message.onlyFor : [];
-        const wrongTarget = onlyFor.length > 0 && !onlyFor.includes(hostname);
-        return !seen && !wrongTarget && !shownMessages.has(message.timestamp);
-      })
-      .sort((a, b) => dayjs(a.timestamp).valueOf() - dayjs(b.timestamp).valueOf());
+        if (!message) {
+          return false;
+        }
 
-    console.log('showMissedMessages to-show:', queue.map(message => message.timestamp));
+        const seen = message.seenBy.includes(hostname);
+        const onlyFor = message.onlyFor;
+        const wrongTarget = onlyFor.length > 0 && !onlyFor.includes(hostname);
+        const messageKey = getMessageKey(message);
+        return Boolean(messageKey) && isMessageDue(message) && !seen && !wrongTarget && !shownMessages.has(messageKey);
+      })
+      .sort((a, b) => dayjs(getMessageDueAt(a)).valueOf() - dayjs(getMessageDueAt(b)).valueOf());
+
+    console.log('showMissedMessages to-show:', queue.map(message => getMessageKey(message)));
 
     for (const message of queue) {
+      const messageKey = getMessageKey(message);
       await createAlertWindow(message.text);
-      shownMessages.add(message.timestamp);
+      shownMessages.add(messageKey);
 
       await updateMessages(allMessages => {
-        const idx = allMessages.findIndex(entry => entry.timestamp === message.timestamp);
+        const idx = allMessages.findIndex(entry => getMessageKey(normalizeMessageRecord(entry)) === messageKey);
         if (idx === -1) {
           return allMessages;
         }
 
-        const seenBy = Array.isArray(allMessages[idx].seenBy) ? allMessages[idx].seenBy : [];
+        const seenBy = uniqueStrings(allMessages[idx].seenBy);
         if (!seenBy.includes(hostname)) {
           seenBy.push(hostname);
           allMessages[idx].seenBy = seenBy;
@@ -743,40 +982,101 @@ async function showMissedMessages() {
 }
 
 ipcMain.removeHandler('send-alert');
-ipcMain.handle('send-alert', async (_, message) => {
+ipcMain.handle('send-alert', async (_, payload) => {
+  const request = typeof payload === 'string' ? { text: payload } : (payload || {});
+  const text = String(request.text || '').trim();
+  if (!text) {
+    throw new Error('Bitte zuerst eine Nachricht eingeben.');
+  }
+
+  const onlyFor = uniqueStrings(request.onlyFor);
+  const scheduledFor = normalizeScheduledFor(request.scheduledFor || request.deliverAt);
+  const shouldSchedule = scheduledFor && dayjs(scheduledFor).valueOf() > Date.now();
   suppressWatcher = true;
 
   try {
+    if (shouldSchedule) {
+      const scheduledMessage = createScheduledMessage({ text, onlyFor, scheduledFor });
+      await queueScheduledMessage(scheduledMessage);
+      return {
+        scheduled: true,
+        scheduledFor,
+        id: scheduledMessage.id
+      };
+    }
+
+    const immediateMessage = createImmediateMessage({ text, onlyFor });
     await updateMessages(allMessages => {
-      allMessages.push({
-        text: message,
-        timestamp: dayjs().format(),
-        onlyFor: [],
-        seenBy: []
-      });
+      allMessages.push(immediateMessage);
       return allMessages;
     });
+
+    return {
+      scheduled: false,
+      id: immediateMessage.id
+    };
   } finally {
     setTimeout(() => { suppressWatcher = false; }, 500);
   }
+});
+
+ipcMain.removeHandler('load-scheduled-alerts');
+ipcMain.handle('load-scheduled-alerts', async () => {
+  const all = await readScheduledMessages();
+  return all
+    .map(message => normalizeMessageRecord(message))
+    .filter(Boolean)
+    .sort((a, b) => dayjs(getMessageDueAt(a)).valueOf() - dayjs(getMessageDueAt(b)).valueOf())
+    .map(message => ({
+      id: getMessageKey(message),
+      text: message.text,
+      timestamp: message.timestamp,
+      createdAt: message.createdAt,
+      scheduledFor: message.scheduledFor,
+      onlyFor: message.onlyFor
+    }));
+});
+
+ipcMain.removeHandler('delete-scheduled-alert');
+ipcMain.handle('delete-scheduled-alert', async (_, messageId) => {
+  const targetId = String(messageId || '').trim();
+  if (!targetId) {
+    return false;
+  }
+
+  await withMessagesFileLock(async () => {
+    const all = await readScheduledMessagesFromDisk({ createIfMissing: true });
+    const remaining = all.filter(message => getMessageKey(normalizeMessageRecord(message)) !== targetId);
+    await writeScheduledMessagesAtomic(remaining);
+  });
+
+  return true;
 });
 
 ipcMain.removeHandler('load-archive');
 ipcMain.handle('load-archive', async () => {
   const all = await readMessages();
   return all
-    .filter(message => message && message.timestamp)
+    .map(message => normalizeMessageRecord(message))
+    .filter(Boolean)
     .map(message => ({
-      text: String(message.text || '').trim(),
+      id: getMessageKey(message),
+      text: message.text,
       timestamp: message.timestamp,
-      seenBy: Array.isArray(message.seenBy) ? message.seenBy : []
+      createdAt: message.createdAt,
+      scheduledFor: message.scheduledFor,
+      onlyFor: message.onlyFor,
+      seenBy: message.seenBy
     }))
-    .sort((a, b) => dayjs(b.timestamp).valueOf() - dayjs(a.timestamp).valueOf());
+    .sort((a, b) => dayjs(getMessageDueAt(b) || b.timestamp).valueOf() - dayjs(getMessageDueAt(a) || a.timestamp).valueOf());
 });
 
 ipcMain.removeHandler('delete-message');
-ipcMain.handle('delete-message', async (_, timestamp) => {
-  await updateMessages(allMessages => allMessages.filter(message => message.timestamp !== timestamp));
+ipcMain.handle('delete-message', async (_, messageId) => {
+  const targetId = String(messageId || '').trim();
+  await updateMessages(allMessages =>
+    allMessages.filter(message => getMessageKey(normalizeMessageRecord(message)) !== targetId)
+  );
   return true;
 });
 
