@@ -1,6 +1,6 @@
 {
   "name": "pausenrechner",
-  "version": "1.9.2",
+  "version": "1.9.3",
   "description": "Pausenrechner App",
   "main": "main.js",
   "author": "Mev",
@@ -27,7 +27,7 @@
   "build": {
     "appId": "com.pausenrechner.app",
     "productName": "Pausenrechner",
-    "artifactName": "${productName} Setup ${version}.${ext}",
+    "artifactName": "Pausenrechner-Setup-${version}.${ext}",
     "directories": {
       "output": "dist"
     },
