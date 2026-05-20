@@ -36,7 +36,7 @@ const messagesFile      = path.join(folderPath, 'nachrichten.json');
 const scheduledMessagesFile = path.join(folderPath, 'nachrichten_geplant.json');
 const messagesLockFile  = path.join(folderPath, 'nachrichten.json.lock');
 const phoneUsageRequestsFile = path.join(folderPath, 'handyfreigaben.json');
-const phoneUsageRequestsLockFile = path.join(folderPath, 'handyfreigaben.json.lock');
+const legacyPhoneUsageLockFile = path.join(folderPath, 'handyfreigaben.json.lock');
 const getPauseDateiPfad = () => path.join(folderPath, `${os.hostname()}.json`);
 const getSonderPauseDateiPfad = () => path.join(folderPath, 'sonderpausen.json');
 const MESSAGE_LOCK_TIMEOUT_MS = 15000;
@@ -211,8 +211,8 @@ async function withMessagesFileLock(task) {
   return withFileLock(messagesLockFile, task);
 }
 
-async function withPhoneUsageRequestsLock(task) {
-  return withFileLock(phoneUsageRequestsLockFile, task);
+async function cleanupLegacyPhoneUsageLockFile() {
+  await fs.promises.unlink(legacyPhoneUsageLockFile).catch(() => {});
 }
 
 async function backupUnreadableFile(filePath) {
@@ -382,6 +382,7 @@ async function readPhoneUsageRequestsFromDisk(options = {}) {
 
 async function readPhoneUsageRequests() {
   try {
+    await cleanupLegacyPhoneUsageLockFile();
     const requests = await readPhoneUsageRequestsFromDisk({ createIfMissing: true });
     return requests
       .map(request => normalizePhoneUsageRequest(request))
@@ -410,36 +411,36 @@ async function requestPhoneUsage({ agent, clientId, durationMs } = {}) {
     throw new Error('Bitte zuerst einen Agenten waehlen.');
   }
 
-  return withPhoneUsageRequestsLock(async () => {
-    const allRequests = await readPhoneUsageRequestsFromDisk({ createIfMissing: true });
-    const normalizedRequests = allRequests
-      .map(request => normalizePhoneUsageRequest(request))
-      .filter(Boolean)
-      .sort((a, b) => dayjs(a.requestedAt).valueOf() - dayjs(b.requestedAt).valueOf());
+  await cleanupLegacyPhoneUsageLockFile();
 
-    const activeRequest = normalizedRequests.find(request =>
-      request.agent === normalizedAgent &&
-      request.clientId === normalizedClientId &&
-      isPhoneUsageRequestActive(request)
-    );
+  const allRequests = await readPhoneUsageRequestsFromDisk({ createIfMissing: true });
+  const normalizedRequests = allRequests
+    .map(request => normalizePhoneUsageRequest(request))
+    .filter(Boolean)
+    .sort((a, b) => dayjs(a.requestedAt).valueOf() - dayjs(b.requestedAt).valueOf());
 
-    if (activeRequest) {
-      return { alreadyActive: true, request: activeRequest };
-    }
+  const activeRequest = normalizedRequests.find(request =>
+    request.agent === normalizedAgent &&
+    request.clientId === normalizedClientId &&
+    isPhoneUsageRequestActive(request)
+  );
 
-    const requestedAt = dayjs();
-    const newRequest = {
-      id: createMessageId(),
-      agent: normalizedAgent,
-      clientId: normalizedClientId,
-      requestedAt: requestedAt.toISOString(),
-      expiresAt: requestedAt.add(safeDurationMs, 'millisecond').toISOString()
-    };
+  if (activeRequest) {
+    return { alreadyActive: true, request: activeRequest };
+  }
 
-    normalizedRequests.push(newRequest);
-    await writeJsonArrayAtomic(phoneUsageRequestsFile, normalizedRequests);
-    return { alreadyActive: false, request: newRequest };
-  });
+  const requestedAt = dayjs();
+  const newRequest = {
+    id: createMessageId(),
+    agent: normalizedAgent,
+    clientId: normalizedClientId,
+    requestedAt: requestedAt.toISOString(),
+    expiresAt: requestedAt.add(safeDurationMs, 'millisecond').toISOString()
+  };
+
+  normalizedRequests.push(newRequest);
+  await writeJsonArrayAtomic(phoneUsageRequestsFile, normalizedRequests);
+  return { alreadyActive: false, request: newRequest };
 }
 
 async function getPhoneUsageState({ agent, clientId } = {}) {
@@ -572,6 +573,7 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
+    await cleanupLegacyPhoneUsageLockFile();
     startApp();
     initAlert();
     await promoteDueScheduledMessages();
