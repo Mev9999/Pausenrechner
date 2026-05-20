@@ -7,10 +7,12 @@ const { ipcRenderer } = require('electron');
 const SONDERPAUSEN_DATEINAME = 'sonderpausen.json';
 const NACHRICHTEN_DATEINAME = 'nachrichten.json';
 const GEPLANTE_NACHRICHTEN_DATEINAME = 'nachrichten_geplant.json';
+const HANDYFREIGABEN_DATEINAME = 'handyfreigaben.json';
 const SPECIAL_JSON_DATEIEN = new Set([
   SONDERPAUSEN_DATEINAME,
   NACHRICHTEN_DATEINAME,
-  GEPLANTE_NACHRICHTEN_DATEINAME
+  GEPLANTE_NACHRICHTEN_DATEINAME,
+  HANDYFREIGABEN_DATEINAME
 ]);
 const folderPath = '\\\\svrstorage\\Telefondatenbanken\\ServicelineReports\\Pausenzeiten';
 const correctPassword = 'Vitachef1!';
@@ -18,6 +20,8 @@ const correctPassword = 'Vitachef1!';
 let knownAgents = [];
 let adminVisible = false;
 let refreshTimer = null;
+let knownPhoneUsageRequestIds = new Set();
+let phoneUsageInitialLoadComplete = false;
 
 function escapeHtml(value) {
   return String(value ?? '')
@@ -45,6 +49,14 @@ function formatRecipients(onlyFor) {
   return Array.isArray(onlyFor) && onlyFor.length ? onlyFor.join(', ') : 'Alle PCs';
 }
 
+function formatPhoneUsageRemaining(expiresAt) {
+  const remainingMs = Math.max(0, dayjs(expiresAt).valueOf() - Date.now());
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
 function showToastAdmin(message, success = true) {
   const toast = document.createElement('div');
   toast.style.position = 'fixed';
@@ -62,6 +74,93 @@ function showToastAdmin(message, success = true) {
 
   document.body.appendChild(toast);
   setTimeout(() => toast.remove(), 3000);
+}
+
+async function loadPhoneUsageRequests({ notifyOnNew = false } = {}) {
+  const summary = document.getElementById('phone-usage-summary');
+  const activeContainer = document.getElementById('phone-usage-active-list');
+  const historyContainer = document.getElementById('phone-usage-history-list');
+  if (!summary || !activeContainer || !historyContainer) {
+    return;
+  }
+
+  try {
+    const requests = await ipcRenderer.invoke('load-phone-usage-requests');
+    const currentIds = new Set(requests.map(request => request.id));
+
+    if (notifyOnNew && phoneUsageInitialLoadComplete) {
+      const newRequests = requests.filter(request => !knownPhoneUsageRequestIds.has(request.id));
+      if (newRequests.length === 1) {
+        const request = newRequests[0];
+        showToastAdmin(`Handyfreigabe von ${request.agent} (${request.clientId}) eingegangen.`);
+      } else if (newRequests.length > 1) {
+        showToastAdmin(`${newRequests.length} neue Handyfreigaben eingegangen.`);
+      }
+    }
+
+    knownPhoneUsageRequestIds = currentIds;
+    phoneUsageInitialLoadComplete = true;
+
+    if (!requests.length) {
+      summary.innerHTML = '<span class="muted-message">Noch keine Eintraege.</span>';
+      activeContainer.innerHTML = '<p class="muted-message">Aktuell ist keine Handyfreigabe aktiv.</p>';
+      historyContainer.innerHTML = '<p class="muted-message">Noch keine Eintraege.</p>';
+      return;
+    }
+
+    const activeRequests = requests.filter(request => request.active);
+    const todayCount = requests.filter(request => dayjs(request.requestedAt).isSame(dayjs(), 'day')).length;
+    const countsByAgent = requests.reduce((acc, request) => {
+      acc[request.agent] = (acc[request.agent] || 0) + 1;
+      return acc;
+    }, {});
+    const topAgentEntry = Object.entries(countsByAgent)
+      .sort((a, b) => b[1] - a[1])[0];
+
+    summary.innerHTML = [
+      `Gesamt: <strong>${requests.length}</strong>`,
+      `Heute: <strong>${todayCount}</strong>`,
+      topAgentEntry ? `Am haeufigsten: <strong>${escapeHtml(topAgentEntry[0])}</strong> (${topAgentEntry[1]})` : null
+    ].filter(Boolean).join(' | ');
+
+    activeContainer.innerHTML = activeRequests.length
+      ? activeRequests.map(request => `
+          <div class="phone-request-item is-active">
+            <div class="phone-request-title">
+              <strong>${escapeHtml(request.agent)}</strong>
+              <span class="phone-request-badge is-active">aktiv</span>
+            </div>
+            <div class="phone-request-meta">
+              PC: ${escapeHtml(request.clientId)}<br>
+              Beantragt: ${escapeHtml(formatDateTime(request.requestedAt))}<br>
+              Aktiv bis: ${escapeHtml(formatDateTime(request.expiresAt))}<br>
+              Restzeit: ${escapeHtml(formatPhoneUsageRemaining(request.expiresAt))}
+            </div>
+          </div>
+        `).join('')
+      : '<p class="muted-message">Aktuell ist keine Handyfreigabe aktiv.</p>';
+
+    historyContainer.innerHTML = requests.slice(0, 20).map(request => `
+      <div class="phone-request-item ${request.active ? 'is-active' : ''}">
+        <div class="phone-request-title">
+          <strong>${escapeHtml(request.agent)}</strong>
+          <span class="phone-request-badge ${request.active ? 'is-active' : 'is-expired'}">
+            ${request.active ? 'aktiv' : 'abgelaufen'}
+          </span>
+        </div>
+        <div class="phone-request-meta">
+          PC: ${escapeHtml(request.clientId)}<br>
+          Beantragt: ${escapeHtml(formatDateTime(request.requestedAt))}<br>
+          Aktiv bis: ${escapeHtml(formatDateTime(request.expiresAt))}
+        </div>
+      </div>
+    `).join('');
+  } catch (error) {
+    console.error('Fehler beim Laden der Handyfreigaben:', error);
+    summary.innerHTML = '<span class="muted-message">Handyfreigaben konnten nicht geladen werden.</span>';
+    activeContainer.innerHTML = '<p class="muted-message">Handyfreigaben konnten nicht geladen werden.</p>';
+    historyContainer.innerHTML = '<p class="muted-message">Handyfreigaben konnten nicht geladen werden.</p>';
+  }
 }
 
 async function markOnlineStatus() {
@@ -499,6 +598,7 @@ function startRefreshLoop() {
 
     ladeSonderpausen();
     loadScheduledAlerts();
+    loadPhoneUsageRequests({ notifyOnNew: true });
   }, 5000);
 }
 
@@ -633,6 +733,7 @@ function initAdminPage() {
       loadData();
       ladeSonderpausen();
       loadScheduledAlerts();
+      loadPhoneUsageRequests();
       startRefreshLoop();
     }, 100);
   }
@@ -666,6 +767,14 @@ ipcRenderer.on('client-status', (_, { clientId, status }) => {
 
 ipcRenderer.on('sonderpausen-aktualisieren', (_event, payload) => {
   handleSonderpausenUpdate(payload);
+});
+
+ipcRenderer.on('phone-usage-updated', () => {
+  if (!adminVisible) {
+    return;
+  }
+
+  loadPhoneUsageRequests({ notifyOnNew: true });
 });
 
 window.deletePause = deletePause;

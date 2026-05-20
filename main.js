@@ -35,12 +35,15 @@ const folderPath        = '\\\\svrstorage\\Telefondatenbanken\\ServicelineReport
 const messagesFile      = path.join(folderPath, 'nachrichten.json');
 const scheduledMessagesFile = path.join(folderPath, 'nachrichten_geplant.json');
 const messagesLockFile  = path.join(folderPath, 'nachrichten.json.lock');
+const phoneUsageRequestsFile = path.join(folderPath, 'handyfreigaben.json');
+const phoneUsageRequestsLockFile = path.join(folderPath, 'handyfreigaben.json.lock');
 const getPauseDateiPfad = () => path.join(folderPath, `${os.hostname()}.json`);
 const getSonderPauseDateiPfad = () => path.join(folderPath, 'sonderpausen.json');
 const MESSAGE_LOCK_TIMEOUT_MS = 15000;
 const MESSAGE_LOCK_RETRY_MS = 150;
 const MESSAGE_LOCK_STALE_MS = 60000;
 const MESSAGE_POLL_INTERVAL_MS = 30000;
+const PHONE_USAGE_DURATION_MS = 5 * 60 * 1000;
 const shownMessages = new Set();
 let messagePollTimer = null;
 let isProcessingScheduledMessages = false;
@@ -147,12 +150,16 @@ function createScheduledMessage(payload = {}) {
   };
 }
 
-async function acquireMessagesLock() {
-  const deadline = Date.now() + MESSAGE_LOCK_TIMEOUT_MS;
+async function acquireFileLock(lockFile, {
+  timeoutMs = MESSAGE_LOCK_TIMEOUT_MS,
+  retryMs = MESSAGE_LOCK_RETRY_MS,
+  staleMs = MESSAGE_LOCK_STALE_MS
+} = {}) {
+  const deadline = Date.now() + timeoutMs;
 
   while (Date.now() < deadline) {
     try {
-      const handle = await fs.promises.open(messagesLockFile, 'wx');
+      const handle = await fs.promises.open(lockFile, 'wx');
       await handle.writeFile(
         JSON.stringify({
           pid: process.pid,
@@ -168,9 +175,9 @@ async function acquireMessagesLock() {
       }
 
       try {
-        const stat = await fs.promises.stat(messagesLockFile);
-        if (Date.now() - stat.mtimeMs > MESSAGE_LOCK_STALE_MS) {
-          await fs.promises.unlink(messagesLockFile).catch(() => {});
+        const stat = await fs.promises.stat(lockFile);
+        if (Date.now() - stat.mtimeMs > staleMs) {
+          await fs.promises.unlink(lockFile).catch(() => {});
           continue;
         }
       } catch (statErr) {
@@ -179,15 +186,15 @@ async function acquireMessagesLock() {
         }
       }
 
-      await sleep(MESSAGE_LOCK_RETRY_MS);
+      await sleep(retryMs);
     }
   }
 
-  throw new Error(`Konnte die Nachrichten-Sperre nicht innerhalb von ${MESSAGE_LOCK_TIMEOUT_MS} ms erhalten.`);
+  throw new Error(`Konnte die Sperre fuer ${lockFile} nicht innerhalb von ${timeoutMs} ms erhalten.`);
 }
 
-async function withMessagesFileLock(task) {
-  const lockHandle = await acquireMessagesLock();
+async function withFileLock(lockFile, task, lockOptions) {
+  const lockHandle = await acquireFileLock(lockFile, lockOptions);
 
   try {
     return await task();
@@ -196,8 +203,16 @@ async function withMessagesFileLock(task) {
       await lockHandle.close();
     } catch (_) {}
 
-    await fs.promises.unlink(messagesLockFile).catch(() => {});
+    await fs.promises.unlink(lockFile).catch(() => {});
   }
+}
+
+async function withMessagesFileLock(task) {
+  return withFileLock(messagesLockFile, task);
+}
+
+async function withPhoneUsageRequestsLock(task) {
+  return withFileLock(phoneUsageRequestsLockFile, task);
 }
 
 async function backupUnreadableFile(filePath) {
@@ -316,6 +331,136 @@ async function readScheduledMessages() {
         : `Korrupte oder leere JSON in ${scheduledMessagesFile}. Bitte Datei pruefen.`
     );
   }
+}
+
+function getPhoneUsageRequestId(request = {}) {
+  if (request.id) {
+    return String(request.id);
+  }
+
+  const agent = String(request.agent || '').trim();
+  const clientId = String(request.clientId || '').trim();
+  const requestedAt = String(request.requestedAt || request.timestamp || '').trim();
+  return `${agent}__${clientId}__${requestedAt}`;
+}
+
+function normalizePhoneUsageRequest(request = {}) {
+  if (!request || typeof request !== 'object') {
+    return null;
+  }
+
+  const agent = String(request.agent || '').trim();
+  const clientId = String(request.clientId || request.pcName || '').trim();
+  const requestedAt = dayjs(request.requestedAt || request.timestamp || request.createdAt);
+  const expiresAt = dayjs(request.expiresAt || request.activeUntil);
+
+  if (!agent || !clientId || !requestedAt.isValid()) {
+    return null;
+  }
+
+  const resolvedExpiresAt = expiresAt.isValid()
+    ? expiresAt
+    : requestedAt.add(PHONE_USAGE_DURATION_MS, 'millisecond');
+
+  return {
+    id: getPhoneUsageRequestId(request),
+    agent,
+    clientId,
+    requestedAt: requestedAt.toISOString(),
+    expiresAt: resolvedExpiresAt.toISOString()
+  };
+}
+
+function isPhoneUsageRequestActive(request, now = dayjs()) {
+  const expiresAt = dayjs(request?.expiresAt);
+  return expiresAt.isValid() && expiresAt.valueOf() > now.valueOf();
+}
+
+async function readPhoneUsageRequestsFromDisk(options = {}) {
+  return readJsonArrayFromDisk(phoneUsageRequestsFile, options);
+}
+
+async function readPhoneUsageRequests() {
+  try {
+    const requests = await readPhoneUsageRequestsFromDisk({ createIfMissing: true });
+    return requests
+      .map(request => normalizePhoneUsageRequest(request))
+      .filter(Boolean)
+      .sort((a, b) => dayjs(b.requestedAt).valueOf() - dayjs(a.requestedAt).valueOf());
+  } catch (error) {
+    console.error(`Fehler beim Lesen/Parsen von '${phoneUsageRequestsFile}':`, error.message);
+    const backupPath = await backupUnreadableFile(phoneUsageRequestsFile);
+
+    throw new Error(
+      backupPath
+        ? `Korrupte oder leere JSON in ${phoneUsageRequestsFile}. Backup unter ${backupPath}. Bitte Datei pruefen.`
+        : `Korrupte oder leere JSON in ${phoneUsageRequestsFile}. Bitte Datei pruefen.`
+    );
+  }
+}
+
+async function requestPhoneUsage({ agent, clientId, durationMs } = {}) {
+  const normalizedAgent = String(agent || '').trim();
+  const normalizedClientId = String(clientId || os.hostname()).trim();
+  const safeDurationMs = Number.isFinite(durationMs) && durationMs > 0
+    ? Math.min(durationMs, PHONE_USAGE_DURATION_MS)
+    : PHONE_USAGE_DURATION_MS;
+
+  if (!normalizedAgent) {
+    throw new Error('Bitte zuerst einen Agenten waehlen.');
+  }
+
+  return withPhoneUsageRequestsLock(async () => {
+    const allRequests = await readPhoneUsageRequestsFromDisk({ createIfMissing: true });
+    const normalizedRequests = allRequests
+      .map(request => normalizePhoneUsageRequest(request))
+      .filter(Boolean)
+      .sort((a, b) => dayjs(a.requestedAt).valueOf() - dayjs(b.requestedAt).valueOf());
+
+    const activeRequest = normalizedRequests.find(request =>
+      request.agent === normalizedAgent &&
+      request.clientId === normalizedClientId &&
+      isPhoneUsageRequestActive(request)
+    );
+
+    if (activeRequest) {
+      return { alreadyActive: true, request: activeRequest };
+    }
+
+    const requestedAt = dayjs();
+    const newRequest = {
+      id: createMessageId(),
+      agent: normalizedAgent,
+      clientId: normalizedClientId,
+      requestedAt: requestedAt.toISOString(),
+      expiresAt: requestedAt.add(safeDurationMs, 'millisecond').toISOString()
+    };
+
+    normalizedRequests.push(newRequest);
+    await writeJsonArrayAtomic(phoneUsageRequestsFile, normalizedRequests);
+    return { alreadyActive: false, request: newRequest };
+  });
+}
+
+async function getPhoneUsageState({ agent, clientId } = {}) {
+  const normalizedAgent = String(agent || '').trim();
+  const normalizedClientId = String(clientId || os.hostname()).trim();
+  if (!normalizedAgent) {
+    return null;
+  }
+
+  const requests = await readPhoneUsageRequests();
+  return requests.find(request =>
+    request.agent === normalizedAgent &&
+    request.clientId === normalizedClientId &&
+    isPhoneUsageRequestActive(request)
+  ) || null;
+}
+
+function broadcastPhoneUsageUpdate(payload = {}) {
+  BrowserWindow.getAllWindows().forEach(win => {
+    win.webContents.send('phone-usage-updated', payload);
+  });
 }
 
 async function queueScheduledMessage(message) {
@@ -697,12 +842,17 @@ async function showMissedMessages() {
 // 🔄 File-Watcher
 // ===========================
 function setupWatcher() {
-  const watcher = chokidar.watch([messagesFile, scheduledMessagesFile], {
+  const watcher = chokidar.watch([messagesFile, scheduledMessagesFile, phoneUsageRequestsFile], {
     ignoreInitial:true,
     awaitWriteFinish:{ stabilityThreshold:200, pollInterval:100 }
   });
   let timer;
-  watcher.on('change', () => {
+  watcher.on('change', changedPath => {
+    if (changedPath === phoneUsageRequestsFile) {
+      broadcastPhoneUsageUpdate({ type: 'file-changed' });
+      return;
+    }
+
     if (suppressWatcher) {
       console.log('🔕 Ignoriere eigenes Write-Event');
       return;
@@ -713,6 +863,12 @@ function setupWatcher() {
       await promoteDueScheduledMessages();
       await showMissedMessages();
     }, 300);
+  });
+
+  watcher.on('add', addedPath => {
+    if (addedPath === phoneUsageRequestsFile) {
+      broadcastPhoneUsageUpdate({ type: 'file-changed' });
+    }
   });
 }
 
@@ -1078,6 +1234,34 @@ ipcMain.handle('delete-message', async (_, messageId) => {
     allMessages.filter(message => getMessageKey(normalizeMessageRecord(message)) !== targetId)
   );
   return true;
+});
+
+ipcMain.removeHandler('request-phone-usage');
+ipcMain.handle('request-phone-usage', async (_, payload) => {
+  const result = await requestPhoneUsage(payload || {});
+  if (!result.alreadyActive) {
+    broadcastPhoneUsageUpdate({ type: 'created', request: result.request });
+  }
+
+  return result;
+});
+
+ipcMain.removeHandler('get-phone-usage-state');
+ipcMain.handle('get-phone-usage-state', async (_, payload) => {
+  const activeRequest = await getPhoneUsageState(payload || {});
+  return {
+    active: Boolean(activeRequest),
+    request: activeRequest
+  };
+});
+
+ipcMain.removeHandler('load-phone-usage-requests');
+ipcMain.handle('load-phone-usage-requests', async () => {
+  const requests = await readPhoneUsageRequests();
+  return requests.map(request => ({
+    ...request,
+    active: isPhoneUsageRequestActive(request)
+  }));
 });
 
 app.on('window-all-closed', () => {

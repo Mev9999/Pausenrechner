@@ -293,6 +293,70 @@
       color: #666;
       margin: 0;
     }
+
+    .phone-request-columns {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+      gap: 12px;
+    }
+
+    .phone-request-column h4 {
+      margin: 0 0 10px;
+      color: #333;
+    }
+
+    .phone-request-item {
+      background: white;
+      border: 1px solid #ddd;
+      border-left: 4px solid #d98200;
+      border-radius: 6px;
+      padding: 10px;
+      margin-bottom: 10px;
+    }
+
+    .phone-request-item.is-active {
+      border-left-color: #d7261e;
+      background: #fff7f5;
+    }
+
+    .phone-request-title {
+      display: flex;
+      justify-content: space-between;
+      gap: 10px;
+      align-items: center;
+      margin-bottom: 6px;
+    }
+
+    .phone-request-title strong {
+      color: #222;
+    }
+
+    .phone-request-meta {
+      color: #555;
+      font-size: 0.92rem;
+      line-height: 1.45;
+    }
+
+    .phone-request-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 88px;
+      padding: 4px 8px;
+      border-radius: 999px;
+      font-size: 0.8rem;
+      font-weight: 700;
+      color: white;
+      background: #666;
+    }
+
+    .phone-request-badge.is-active {
+      background: #d7261e;
+    }
+
+    .phone-request-badge.is-expired {
+      background: #6c757d;
+    }
   </style>
 </head>
 <body>
@@ -379,6 +443,27 @@
           <h3>Geplante Nachrichten</h3>
           <div id="scheduled-alerts-list">
             <p class="muted-message">Keine geplanten Nachrichten.</p>
+          </div>
+        </div>
+
+        <div class="scheduled-alerts">
+          <h3>Handyfreigaben</h3>
+          <div id="phone-usage-summary" class="scheduled-alert-meta">
+            Noch keine Eintraege.
+          </div>
+          <div class="phone-request-columns">
+            <div class="phone-request-column">
+              <h4>Aktuell aktiv</h4>
+              <div id="phone-usage-active-list">
+                <p class="muted-message">Aktuell ist keine Handyfreigabe aktiv.</p>
+              </div>
+            </div>
+            <div class="phone-request-column">
+              <h4>Letzte Eintraege</h4>
+              <div id="phone-usage-history-list">
+                <p class="muted-message">Noch keine Eintraege.</p>
+              </div>
+            </div>
           </div>
         </div>
 

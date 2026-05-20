@@ -11,6 +11,7 @@ const dayjs = require('dayjs');
 const fs = require('fs');
 const { ipcRenderer } = require('electron');
 const os = require('os');
+const PHONE_USAGE_DURATION_MS = 5 * 60 * 1000;
 // Hilfsfunktion für Farben
 const getFarbeAnrufdauer = (wert) => wert > 75 ? 'green' : (wert >= 60 ? 'yellow' : 'red');
 const getFarbeNachbearbeitung = (wert) => wert <= 12 ? 'green' : (wert <= 18 ? 'yellow' : 'red');
@@ -35,10 +36,157 @@ adminButton.addEventListener('click', () => {
   ipcRenderer.send('open-admin');
 });
 
+const phoneUsageButton = document.getElementById('phone-usage-button');
+const phoneUsageStatus = document.getElementById('phone-usage-status');
 const pauseButton = document.getElementById('pause-button');
 let pauseAktiv = false;
 let pauseStartZeit = null;
 let backgroundInterval = null;
+let activePhoneUsageRequest = null;
+let phoneUsageTimer = null;
+
+function getSelectedAgent() {
+  return String(document.getElementById('agent')?.value || '').trim();
+}
+
+function formatPhoneUsageRemaining(expiresAt) {
+  const remainingMs = Math.max(0, dayjs(expiresAt).valueOf() - Date.now());
+  const totalSeconds = Math.ceil(remainingMs / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${String(minutes).padStart(2, '0')}:${String(seconds).padStart(2, '0')}`;
+}
+
+function clearPhoneUsageTimer() {
+  if (phoneUsageTimer) {
+    clearInterval(phoneUsageTimer);
+    phoneUsageTimer = null;
+  }
+}
+
+function renderPhoneUsageState() {
+  if (!phoneUsageButton || !phoneUsageStatus) {
+    return;
+  }
+
+  const agent = getSelectedAgent();
+  const hasActiveRequest = Boolean(
+    activePhoneUsageRequest &&
+    dayjs(activePhoneUsageRequest.expiresAt).isValid() &&
+    dayjs(activePhoneUsageRequest.expiresAt).valueOf() > Date.now()
+  );
+
+  if (!hasActiveRequest) {
+    activePhoneUsageRequest = null;
+    clearPhoneUsageTimer();
+  }
+
+  phoneUsageButton.classList.toggle('is-active', hasActiveRequest);
+  phoneUsageStatus.classList.toggle('is-active', hasActiveRequest);
+  phoneUsageButton.textContent = hasActiveRequest ? 'Handyfreigabe aktiv' : 'Wichtiger Anruf / Handy';
+  phoneUsageButton.disabled = hasActiveRequest || !agent;
+
+  if (hasActiveRequest) {
+    const expiresAt = dayjs(activePhoneUsageRequest.expiresAt);
+    phoneUsageStatus.textContent =
+      `Freigabe fuer ${agent} aktiv bis ${expiresAt.format('HH:mm:ss')} Uhr. Restzeit ${formatPhoneUsageRemaining(activePhoneUsageRequest.expiresAt)}.`;
+    return;
+  }
+
+  if (!agent) {
+    phoneUsageStatus.textContent = 'Bitte zuerst einen Agenten waehlen.';
+    return;
+  }
+
+  phoneUsageStatus.textContent = 'Nur fuer wichtige Anrufe oder wichtige Nachrichten verwenden. Die Freigabe bleibt 5 Minuten sichtbar.';
+}
+
+function startPhoneUsageTimer() {
+  clearPhoneUsageTimer();
+  if (!activePhoneUsageRequest) {
+    renderPhoneUsageState();
+    return;
+  }
+
+  phoneUsageTimer = setInterval(() => {
+    const expiresAt = dayjs(activePhoneUsageRequest?.expiresAt);
+    if (!expiresAt.isValid() || expiresAt.valueOf() <= Date.now()) {
+      activePhoneUsageRequest = null;
+      clearPhoneUsageTimer();
+    }
+
+    renderPhoneUsageState();
+  }, 1000);
+
+  renderPhoneUsageState();
+}
+
+async function syncPhoneUsageState() {
+  const agent = getSelectedAgent();
+  if (!agent) {
+    activePhoneUsageRequest = null;
+    clearPhoneUsageTimer();
+    renderPhoneUsageState();
+    return;
+  }
+
+  try {
+    const state = await ipcRenderer.invoke('get-phone-usage-state', {
+      agent,
+      clientId: os.hostname()
+    });
+
+    activePhoneUsageRequest = state?.active ? state.request : null;
+    if (activePhoneUsageRequest) {
+      startPhoneUsageTimer();
+    } else {
+      clearPhoneUsageTimer();
+      renderPhoneUsageState();
+    }
+  } catch (error) {
+    console.error('Fehler beim Laden der Handyfreigabe:', error);
+    activePhoneUsageRequest = null;
+    clearPhoneUsageTimer();
+    renderPhoneUsageState();
+  }
+}
+
+phoneUsageButton?.addEventListener('click', async () => {
+  const agent = getSelectedAgent();
+  if (!agent) {
+    alert('Bitte zuerst einen Agenten waehlen.');
+    return;
+  }
+
+  try {
+    const result = await ipcRenderer.invoke('request-phone-usage', {
+      agent,
+      clientId: os.hostname(),
+      durationMs: PHONE_USAGE_DURATION_MS
+    });
+
+    activePhoneUsageRequest = result?.request || null;
+    if (activePhoneUsageRequest) {
+      startPhoneUsageTimer();
+    } else {
+      clearPhoneUsageTimer();
+      renderPhoneUsageState();
+    }
+
+    if (result?.alreadyActive && phoneUsageStatus && activePhoneUsageRequest) {
+      phoneUsageStatus.textContent =
+        `Fuer ${agent} ist bereits eine Handyfreigabe aktiv. Restzeit ${formatPhoneUsageRemaining(activePhoneUsageRequest.expiresAt)}.`;
+      phoneUsageStatus.classList.add('is-active');
+    }
+  } catch (error) {
+    console.error('Handyfreigabe konnte nicht gespeichert werden:', error);
+    alert('Handyfreigabe konnte nicht gespeichert werden.');
+  }
+});
+
+ipcRenderer.on('phone-usage-updated', () => {
+  syncPhoneUsageState();
+});
 
 function freigabeBeantragen(datum, von, bis) {
   if (document.getElementById('sonderpause-overlay')) return;
@@ -243,6 +391,12 @@ const endInput = document.getElementById('end');
 const arbeitsbeginn = document.getElementById('arbeitsbeginn');
 const arbeitsende = document.getElementById('arbeitsende');
 
+select.addEventListener('change', () => {
+  syncPhoneUsageState();
+});
+
+renderPhoneUsageState();
+
 document.querySelector("label[for='start']").textContent = 'Pause berechnen von:';
 document.querySelector("label[for='end']").textContent = 'Pause berechnen bis:';
 
@@ -320,6 +474,8 @@ agents.forEach(agent => {
   option.text = agent;
   select.appendChild(option);
 });
+
+syncPhoneUsageState();
 
 
 function createCharts(chartData, nachbearbeitungsData) {
@@ -1037,6 +1193,7 @@ function ladeExcelNeu() {
         select.appendChild(option);
       });
       console.log('✅ Agentenliste neu geladen');
+      syncPhoneUsageState();
     }
   } catch (error) {
     console.error('❌ Fehler beim Neuladen der Excel:', error);
@@ -1050,6 +1207,3 @@ fs.watchFile(filePath, (curr, prev) => {
     berechnePausen();
   }
 });
-
-
-
