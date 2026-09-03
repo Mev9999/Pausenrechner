@@ -14,7 +14,7 @@ const SPECIAL_JSON_DATEIEN = new Set([
   GEPLANTE_NACHRICHTEN_DATEINAME,
   HANDYFREIGABEN_DATEINAME
 ]);
-const folderPath = '\\\\svrstorage\\Telefondatenbanken\\ServicelineReports\\Pausenzeiten';
+const folderPath = '\\\\192.168.210.42\\Serviceline-Team\\Pausenrechner';
 const correctPassword = 'Vitachef1!';
 
 let knownAgents = [];

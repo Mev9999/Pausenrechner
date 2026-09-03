@@ -21,7 +21,7 @@ let anrufdauerChartInstance = null;
 let nachbearbeitungszeitChartInstance = null;
 let klingeldauerChartInstance = null;
 
-const filePath = "\\\\svrstorage\\Telefondatenbanken\\ServicelineReports\\Pausenzeiten\\AnrufeProAgent.xlsx"; // Der korrekte Pfad
+const filePath = "\\\\192.168.210.42\\Serviceline-Team\\Pausenrechner\\AnrufeProAgent.xlsx"; // Der korrekte Pfad
 
 const appVersion = require('./package.json').version;
 document.addEventListener("DOMContentLoaded", () => {

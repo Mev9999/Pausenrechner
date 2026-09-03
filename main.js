@@ -31,7 +31,7 @@ require(path.join(__dirname, 'chat.js'));
 // ===========================
 // 📂 Pfade & State
 // ===========================
-const folderPath        = '\\\\svrstorage\\Telefondatenbanken\\ServicelineReports\\Pausenzeiten';
+const folderPath        = '\\\\192.168.210.42\\Serviceline-Team\\Pausenrechner';
 const messagesFile      = path.join(folderPath, 'nachrichten.json');
 const scheduledMessagesFile = path.join(folderPath, 'nachrichten_geplant.json');
 const messagesLockFile  = path.join(folderPath, 'nachrichten.json.lock');
