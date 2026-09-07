@@ -539,14 +539,11 @@ function startMessagePolling() {
 
   messagePollTimer = setInterval(() => {
     promoteDueScheduledMessages()
-      .then(promotedCount => {
-        if (promotedCount > 0) {
-          return showMissedMessages();
-        }
-        return null;
-      })
+      // SMB-Datei-Events werden von manchen NAS-Freigaben nicht an alle
+      // Clients weitergegeben. Deshalb neue Nachrichten zusaetzlich pollen.
+      .then(() => showMissedMessages())
       .catch(error => {
-        console.error('Fehler beim Verarbeiten geplanter Nachrichten:', error);
+        console.error('Fehler beim Pruefen neuer oder geplanter Nachrichten:', error);
       });
   }, MESSAGE_POLL_INTERVAL_MS);
 }

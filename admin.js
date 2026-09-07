@@ -647,7 +647,8 @@ function initAdminPage() {
   togglePassword?.addEventListener('click', () => {
     const isPassword = passwordInput.type === 'password';
     passwordInput.type = isPassword ? 'text' : 'password';
-    togglePassword.textContent = isPassword ? 'Verbergen' : 'Auge';
+    togglePassword.textContent = isPassword ? '🙈' : '👁️';
+    togglePassword.title = isPassword ? 'Passwort verbergen' : 'Passwort anzeigen';
   });
 
   alertAllClients?.addEventListener('change', syncAlertRecipientState);
