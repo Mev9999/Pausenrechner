@@ -537,15 +537,19 @@ function startMessagePolling() {
     return;
   }
 
-  messagePollTimer = setInterval(() => {
-    promoteDueScheduledMessages()
-      // SMB-Datei-Events werden von manchen NAS-Freigaben nicht an alle
-      // Clients weitergegeben. Deshalb neue Nachrichten zusaetzlich pollen.
-      .then(() => showMissedMessages())
-      .catch(error => {
-        console.error('Fehler beim Pruefen neuer oder geplanter Nachrichten:', error);
-      });
-  }, MESSAGE_POLL_INTERVAL_MS);
+  let busy = false;
+  const poll = async () => {
+    if (busy) return;
+    busy = true;
+    try {
+      await promoteDueScheduledMessages().catch(error => log.warn('Nachrichtenplanung nicht erreichbar:', error.message));
+      await showMissedMessages();
+    } finally {
+      busy = false;
+    }
+  };
+  messagePollTimer = setInterval(poll, MESSAGE_POLL_INTERVAL_MS);
+  void poll();
 }
 
 
@@ -570,13 +574,11 @@ if (!gotTheLock) {
   });
 
   app.whenReady().then(async () => {
-    await cleanupLegacyPhoneUsageLockFile();
     startApp();
     initAlert();
-    await promoteDueScheduledMessages();
-    await showMissedMessages();
-    setupWatcher();
     startMessagePolling();
+    setupWatcher();
+    void cleanupLegacyPhoneUsageLockFile().catch(error => log.warn(error.message));
   });
 }
 
@@ -846,6 +848,7 @@ function setupWatcher() {
     awaitWriteFinish:{ stabilityThreshold:200, pollInterval:100 }
   });
   let timer;
+  watcher.on('error', error => log.warn('NAS-Dateibeobachtung:', error.message));
   watcher.on('change', changedPath => {
     if (changedPath === phoneUsageRequestsFile) {
       broadcastPhoneUsageUpdate({ type: 'file-changed' });
@@ -912,9 +915,16 @@ ipcMain.handle('delete-message', async (_, timestamp) => {
 // ===========================
 // 💾 IPC: Pausen-Daten
 // ===========================
-ipcMain.on('pause-daten-speichern', (_, pauseDaten) => {
+ipcMain.handle('pause-daten-speichern', async (_, pauseDaten) => {
   const file = getPauseDateiPfad();
-  const daten = fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')) : [];
+  await fs.promises.access(folderPath);
+  let daten;
+  try {
+    daten = JSON.parse(await fs.promises.readFile(file, 'utf8'));
+  } catch (error) {
+    if (error.code !== 'ENOENT') throw error;
+    daten = [];
+  }
 
   if (pauseDaten.ende === null) {
     daten.push(pauseDaten);
@@ -923,7 +933,8 @@ ipcMain.on('pause-daten-speichern', (_, pauseDaten) => {
     if (offen) offen.ende = pauseDaten.ende;
     else daten.push(pauseDaten);
   }
-  fs.writeFileSync(file, JSON.stringify(daten, null, 2), 'utf8');
+  await fs.promises.writeFile(file, JSON.stringify(daten, null, 2), 'utf8');
+  return true;
 });
 
 ipcMain.handle('pause-daten-laden', () => {

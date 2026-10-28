@@ -186,7 +186,13 @@
       const endInput = document.getElementById('archive-end');
       const status = document.getElementById('archive-status');
       const container = document.getElementById('archive-messages');
-      const messages = await ipcRenderer.invoke('load-archive');
+      let messages;
+      try {
+        messages = await ipcRenderer.invoke('load-archive');
+      } catch (error) {
+        status.textContent = 'Nachrichten nicht erreichbar. Bitte VPN/Netzwerk verbinden. Automatischer neuer Versuch alle 30 Sekunden.';
+        return;
+      }
 
       if (!messages.length) {
         status.textContent = 'Keine archivierten Nachrichten vorhanden.';
@@ -248,6 +254,7 @@
 
     document.getElementById('archive-filter').addEventListener('click', () => loadAndRender());
     loadAndRender({ resetRange: true });
+    setInterval(() => loadAndRender(), 30000);
   </script>
 </body>
 </html>

@@ -334,21 +334,24 @@ function setPauseButtonState(isPauseAktiv) {
 
 // Button Klick-Handler
 pauseButton.addEventListener('click', async () => {
+  pauseButton.disabled = true;
+  try {
   if (!pauseAktiv) {
-    pauseAktiv = true;
-    pauseStartZeit = new Date();
+    const proposedStart = new Date();
 
-    await ipcRenderer.send('pause-daten-speichern', {
-      start: pauseStartZeit.toISOString(),
+    await ipcRenderer.invoke('pause-daten-speichern', {
+      start: proposedStart.toISOString(),
       ende: null
     });
+    pauseAktiv = true;
+    pauseStartZeit = proposedStart;
 
     setPauseButtonState(true);
 
   } else {
     const pauseEndZeit = new Date();
 
-    await ipcRenderer.send('pause-daten-speichern', {
+    await ipcRenderer.invoke('pause-daten-speichern', {
       start: pauseStartZeit.toISOString(),
       ende: pauseEndZeit.toISOString()
     });
@@ -357,6 +360,11 @@ pauseButton.addEventListener('click', async () => {
     setPauseButtonState(false);
 
     alert('Pause gespeichert!');
+  }
+  } catch (error) {
+    alert('Pause konnte nicht gespeichert werden. Bitte VPN/Netzwerk verbinden und erneut versuchen.');
+  } finally {
+    pauseButton.disabled = false;
   }
 });
 
@@ -375,14 +383,6 @@ document.addEventListener('DOMContentLoaded', async () => {
 });
 
 
-// Überprüfe, ob die Datei existiert
-if (!fs.existsSync(filePath)) {
-  console.error(`❌ Excel-Datei nicht gefunden: ${filePath}`);
-  output.textContent = `❌ Excel-Datei nicht gefunden: ${filePath}`;
-  throw new Error('Datei fehlt');
-} else {
-  console.log(`✔️ Datei gefunden: ${filePath}`);
-}
 
 const select = document.getElementById('agent');
 const output = document.getElementById('ergebnis');
@@ -461,9 +461,7 @@ arbeitsende.addEventListener('keydown', function(event) {
 });
 
 // Excel-Datei laden
-const workbook = xlsx.readFile(filePath);
-const sheet = workbook.Sheets[workbook.SheetNames[0]];
-let data = xlsx.utils.sheet_to_json(sheet);
+let data = [];
 
 // Agenten extrahieren und dem Dropdown hinzufügen
 const agents = [...new Set(data.map(row => row['Agent']).filter(Boolean))];
@@ -1174,16 +1172,31 @@ ipcRenderer.on('sonderpausen-aktualisieren', () => {
 }})
 
 // 🔄 Excel-Datei automatisch neu laden bei Änderungen
-function ladeExcelNeu() {
+let excelLoading = false;
+let excelStamp = null;
+let storageConnected = false;
+const connectionStatus = document.createElement('div');
+connectionStatus.setAttribute('role', 'status');
+connectionStatus.style.cssText = 'padding:12px;background:#fff3cd;color:#664d03;';
+connectionStatus.textContent = 'Verbindung zur Datenablage wird geprueft ...';
+document.body.prepend(connectionStatus);
+
+async function ladeExcelNeu() {
+  if (excelLoading) return;
+  excelLoading = true;
   try {
-    console.log('📂 Lade Excel-Datei neu...');
-    const workbook = xlsx.readFile(filePath);
+    const stat = await fs.promises.stat(filePath);
+    const stamp = `${stat.mtimeMs}:${stat.size}`;
+    if (storageConnected && stamp === excelStamp) return;
+    const buffer = await fs.promises.readFile(filePath);
+    const workbook = xlsx.read(buffer, { type: 'buffer' });
     const sheet = workbook.Sheets[workbook.SheetNames[0]];
     data = xlsx.utils.sheet_to_json(sheet);
 
     // Agentenliste aktualisieren
     const select = document.getElementById('agent');
     if (select) {
+      const previousAgent = select.value;
       select.innerHTML = ''; // Alle bisherigen Optionen löschen
       const agents = [...new Set(data.map(row => row['Agent']).filter(Boolean))];
       agents.forEach(agent => {
@@ -1192,18 +1205,23 @@ function ladeExcelNeu() {
         option.text = agent;
         select.appendChild(option);
       });
+      if (agents.includes(previousAgent)) select.value = previousAgent;
       console.log('✅ Agentenliste neu geladen');
       syncPhoneUsageState();
     }
+    excelStamp = stamp;
+    storageConnected = true;
+    connectionStatus.hidden = true;
   } catch (error) {
+    storageConnected = false;
+    connectionStatus.hidden = false;
+    connectionStatus.textContent = 'Datenablage nicht erreichbar. Bitte VPN/Netzwerk verbinden. Automatischer neuer Versuch alle 30 Sekunden.';
     console.error('❌ Fehler beim Neuladen der Excel:', error);
+  } finally {
+    excelLoading = false;
   }
 }
 
 // Beobachte die Datei auf Änderungen
-fs.watchFile(filePath, (curr, prev) => {
-  if (curr.mtime !== prev.mtime) {
-    ladeExcelNeu();
-    berechnePausen();
-  }
-});
+void ladeExcelNeu();
+setInterval(ladeExcelNeu, 30000);
